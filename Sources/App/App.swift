@@ -7,6 +7,10 @@ struct relic: QApp {
     var requiresQtWidgets: Bool { true }
 
     let qmlFileName: String = "main"
+    
+    var initialProperties: [String : QtBridge.QObjectBuildable] = [
+        "viewModel": AppViewModel()
+    ]
 
     func preApplicationCreate() {
         QMLApp.setOrganizationName("Zaph")
