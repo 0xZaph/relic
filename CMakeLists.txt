@@ -6,7 +6,7 @@ set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH} ${CMAKE_MODULE_PATH})
 find_package(Qt6 REQUIRED COMPONENTS Widgets QuickControls2 Qml Quick)
 find_package(KF6 REQUIRED COMPONENTS Kirigami I18n CoreAddons IconThemes)
 
-add_subdirectory(KirigamiSupport)
+add_subdirectory(Sources/KirigamiSupport)
 
 include(FetchContent)
 FetchContent_Declare(QtBridge
@@ -16,7 +16,7 @@ FetchContent_Declare(QtBridge
 FetchContent_MakeAvailable(QtBridge)
 
 add_executable(relic
-    Sources/App.swift
+    Sources/App/App.swift
 )
 
 target_link_libraries(relic

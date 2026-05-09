@@ -21,7 +21,7 @@ _deps/
 *.qrc.depends
 *.qm
 .qmake.stash
-App/.qmlls.ini
+Sources/App/.qmlls.ini
 
 # C++ compiled files
 *.o
