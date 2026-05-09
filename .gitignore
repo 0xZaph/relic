@@ -1,0 +1,86 @@
+# CMake build directories
+build/
+cmake-build-*/
+out/
+Build/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+_deps/
+
+# Ninja build files
+*.ninja
+.ninja_deps
+.ninja_log
+
+# Qt
+*.qrc.depends
+*.qm
+.qmake.stash
+App/.qmlls.ini
+
+# C++ compiled files
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+
+# Swift compiled files
+*.swiftmodule
+*.swiftdoc
+*.swiftsourceinfo
+*.swiftinterface
+*.abi.json
+*.d
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-*
+*.code-workspace
+.clangd/
+compile_commands.json
+.qmlls.ini
+
+# JetBrains CLion
+.idea/
+cmake-build-*/
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.swp
+*.swo
+*~
+
+# Package managers
+.conan/
+vcpkg_installed/
+
+# Testing
+Testing/
+CTestTestfile.cmake

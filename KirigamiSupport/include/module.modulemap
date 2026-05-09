@@ -1,0 +1,4 @@
+module KirigamiSupport {
+    umbrella header "KirigamiSupport.h"
+    export *
+}
