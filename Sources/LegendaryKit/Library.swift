@@ -204,48 +204,48 @@ public class Library {
         }
 
         let appNamesToRefresh = Set(assetMap.keys).union(fetchedAppNames)
-        for appName in appNamesToRefresh.sorted() {
-            if let assetsByPlatform = assetMap[appName] {
-                do {
-                    if let game = try await buildGameMetadata(appName: appName, assetsByPlatform: assetsByPlatform, client: client) {
-                        try await store.saveGameMetadata(game)
+        // Fetch and save metadata for all games concurrently instead of serially
+        await withTaskGroup(of: Void.self) { group in
+            for appName in appNamesToRefresh {
+                group.addTask {
+                    if let assetsByPlatform = assetMap[appName] {
+                        do {
+                            if let game = try await self.buildGameMetadata(appName: appName, assetsByPlatform: assetsByPlatform, client: client) {
+                                try await self.store.saveGameMetadata(game)
+                            }
+                        } catch {
+                            print("[Library] Failed to build/save metadata for \(appName): \(error)")
+                        }
+                        return
                     }
-                } catch {
-                    print("[Library] Failed to build/save metadata for \(appName): \(error)")
-                    // Continue with other games instead of failing
-                    continue
+
+                    guard let item = libraryItems.first(where: { $0.appName == appName }) else {
+                        return
+                    }
+
+                    do {
+                        guard let metadata = try await self.loadCatalogGameInfo(
+                            client: client,
+                            namespace: item.namespace,
+                            catalogItemId: item.catalogItemId,
+                            appName: appName,
+                            platform: "Windows"
+                        ) else {
+                            return
+                        }
+                        let title = metadata.title ?? appName
+                        let game = Legendary.GameMetadata(
+                            appName: appName,
+                            appTitle: title,
+                            assetInfos: [:],
+                            baseUrls: [],
+                            metadata: metadata
+                        )
+                        try await self.store.saveGameMetadata(game)
+                    } catch {
+                        print("[Library] Failed to load catalog info for \(appName): \(error)")
+                    }
                 }
-                continue
-            }
-
-            guard let item = libraryItems.first(where: { $0.appName == appName }) else {
-                continue
-            }
-
-            do {
-                guard let metadata = try await loadCatalogGameInfo(
-                    client: client,
-                    namespace: item.namespace,
-                    catalogItemId: item.catalogItemId,
-                    appName: appName,
-                    platform: "Windows"
-                ) else {
-                    continue
-                }
-                let title = metadata.title ?? appName
-
-                let game = Legendary.GameMetadata(
-                    appName: appName,
-                    appTitle: title,
-                    assetInfos: [:],
-                    baseUrls: [],
-                    metadata: metadata
-                )
-                try await store.saveGameMetadata(game)
-            } catch {
-                print("[Library] Failed to load catalog info for \(appName): \(error)")
-                // Continue with other games instead of failing
-                continue
             }
         }
 

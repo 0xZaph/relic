@@ -4,6 +4,7 @@ cmake-build-*/
 out/
 Build/
 legendary
+Examples/
 
 # CMake generated files
 CMakeCache.txt

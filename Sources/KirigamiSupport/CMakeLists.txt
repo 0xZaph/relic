@@ -9,6 +9,7 @@ target_link_libraries(KirigamiSupport
         KF6::CoreAddons
         KF6::IconThemes
         Qt6::Qml
+        Qt6::Network
 )
 
 target_include_directories(KirigamiSupport

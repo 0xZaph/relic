@@ -1,8 +1,18 @@
+
+# QML resources to bundle
+set(QML_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/MainWindow.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/ProfilePage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/LibraryPage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/AboutPage.qml
+)
+
 add_executable(relic
     App.swift
     AppViewModel.swift
     UserViewModel.swift
     LibraryViewModel.swift
+    ${QML_FILES}
 )
 
 target_link_libraries(relic
@@ -18,24 +28,26 @@ target_compile_options(relic PRIVATE
     "$<$<COMPILE_LANGUAGE:Swift>:-parse-as-library>"
 )
 
-set(MAIN_QML_FILE "${CMAKE_SOURCE_DIR}/Resources/main.qml")
 
 if(APPLE)
     set_target_properties(relic PROPERTIES
         MACOSX_BUNDLE TRUE
     )
-    target_sources(relic PRIVATE "${MAIN_QML_FILE}")
-    set_source_files_properties("${MAIN_QML_FILE}" PROPERTIES
-        MACOSX_PACKAGE_LOCATION Resources
-    )
+    foreach(qml ${QML_FILES})
+        set_source_files_properties(${qml} PROPERTIES
+            MACOSX_PACKAGE_LOCATION Resources
+        )
+    endforeach()
 else()
-    add_custom_command(
-        TARGET relic POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-            "${MAIN_QML_FILE}"
-            "$<TARGET_FILE_DIR:relic>/main.qml"
-        COMMENT "Copying QML file next to executable"
-    )
+    foreach(qml ${QML_FILES})
+        add_custom_command(
+            TARGET relic POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "${qml}"
+                "$<TARGET_FILE_DIR:relic>/"
+            COMMENT "Copying QML file next to executable"
+        )
+    endforeach()
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     # macOS: Install inside the .app bundle
