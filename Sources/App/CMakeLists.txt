@@ -1,6 +1,8 @@
 add_executable(relic
     App.swift
     AppViewModel.swift
+    UserViewModel.swift
+    LibraryViewModel.swift
 )
 
 target_link_libraries(relic

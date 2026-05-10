@@ -20,8 +20,8 @@ Kirigami.ApplicationWindow {
             Kirigami.Action {
                 text: "Logout"
                 icon.name: "system-log-out"
-                visible: viewModel.isLoggedIn
-                onTriggered: viewModel.logout()
+                visible: viewModel.userViewModel.isLoggedIn
+                onTriggered: viewModel.userViewModel.logout()
             },
             Kirigami.Action {
                 text: "About"
@@ -37,9 +37,9 @@ Kirigami.ApplicationWindow {
             title: "Profile"
             
             ColumnLayout {
-                anchors.centerIn: parent
+                anchors.fill: parent
+                anchors.margins: Kirigami.Units.gridUnit
                 spacing: Kirigami.Units.gridUnit
-                width: parent.width - Kirigami.Units.gridUnit * 2
 
                 Rectangle {
                     Layout.preferredWidth: Kirigami.Units.gridUnit * 6
@@ -57,7 +57,7 @@ Kirigami.ApplicationWindow {
                 }
 
                 Kirigami.Heading {
-                    text: viewModel.username
+                    text: viewModel.userViewModel.username
                     type: Kirigami.Heading.Type.Primary
                     Layout.alignment: Qt.AlignHCenter
                 }
@@ -74,8 +74,52 @@ Kirigami.ApplicationWindow {
                     text: "Refresh Library"
                     icon.name: "view-refresh"
                     Layout.fillWidth: true
-                    onClicked: {
-                        // Future library refresh logic
+                    enabled: !viewModel.libraryViewModel.isRefreshing
+                    onClicked: viewModel.libraryViewModel.refreshLibrary()
+                }
+
+                Controls.Label {
+                    text: viewModel.libraryViewModel.statusMessage
+                    opacity: 0.7
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 8
+
+                    model: viewModel.libraryViewModel.games
+
+                    delegate: Rectangle {
+                        required property var modelData
+
+                        radius: 10
+                        color: Kirigami.Theme.alternateBackgroundColor
+                        implicitHeight: 64
+                        width: ListView.view.width
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 2
+
+                            Controls.Label {
+                                text: modelData.title
+                                font.bold: true
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            Controls.Label {
+                                text: modelData.developer.length > 0 ? modelData.developer : modelData.appName
+                                opacity: 0.7
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
                     }
                 }
 
@@ -84,7 +128,7 @@ Kirigami.ApplicationWindow {
                     icon.name: "system-log-out"
                     Layout.fillWidth: true
                     palette.buttonText: Kirigami.Theme.negativeTextColor
-                    onClicked: viewModel.logout()
+                    onClicked: viewModel.userViewModel.logout()
                 }
             }
         }
@@ -118,7 +162,7 @@ Kirigami.ApplicationWindow {
                     placeholderText: "Authorization Code"
                     Layout.fillWidth: true
                     echoMode: TextInput.Normal
-                    onAccepted: viewModel.login(text)
+                    onAccepted: viewModel.userViewModel.login(text)
                 }
 
                 Controls.Button {
@@ -126,11 +170,11 @@ Kirigami.ApplicationWindow {
                     highlighted: true
                     Layout.fillWidth: true
                     enabled: codeInput.text.length > 0
-                    onClicked: viewModel.login(codeInput.text)
+                    onClicked: viewModel.userViewModel.login(codeInput.text)
                 }
 
                 Controls.Label {
-                    text: viewModel.errorMessage
+                    text: viewModel.userViewModel.errorMessage
                     color: Kirigami.Theme.negativeTextColor
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
@@ -151,12 +195,12 @@ Kirigami.ApplicationWindow {
         }
     }
 
-    pageStack.initialPage: viewModel.isLoggedIn ? homePage : loginPage
+    pageStack.initialPage: viewModel.userViewModel.isLoggedIn ? homePage : loginPage
 
     Connections {
-        target: viewModel
+        target: viewModel.userViewModel
         function onIsLoggedInChanged() {
-            if (viewModel.isLoggedIn) {
+            if (viewModel.userViewModel.isLoggedIn) {
                 pageStack.replace(homePage)
             } else {
                 pageStack.replace(loginPage)

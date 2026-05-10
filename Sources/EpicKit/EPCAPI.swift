@@ -5,14 +5,10 @@ import Foundation
     import FoundationNetworking
 #endif
 
-// This makes use of typestate
-// If you want to learn more, pls refer to:
-// https://swiftology.io/articles/typestate/
+// This was previously using typestate, but has been simplified
+// to regular Swift struct management.
 
-// MARK: - Authentication States
-
-public enum Unauthenticated {}
-public enum Authenticated {}
+// MARK: - Errors
 
 public enum EPCAPIError: Error, Sendable {
     case invalidCredentials(String)
@@ -38,6 +34,9 @@ public enum EpicConstants {
     public static let defaultClientId = "34a02cf8f4414e29b15921876da36f9a"
     public static let defaultClientSecret = "daafbccc737745039dffe53d94fc76cf"
     public static let oauthHost = "account-public-service-prod03.ol.epicgames.com"
+    public static let launcherHost = "launcher-public-service-prod06.ol.epicgames.com"
+    public static let catalogHost = "catalog-public-service-prod06.ol.epicgames.com"
+    public static let libraryHost = "library-service.live.use1a.on.epicgames.com"
     public static let userAgent =
         "UELauncher/11.0.1-14907503+++Portal+Release-Live Windows/10.0.19041.1.256.64bit"
 }
@@ -93,6 +92,100 @@ public struct APIError: Codable, Sendable {
     public let continuationUrl: String?
 }
 
+public struct JSONValue: Codable, @unchecked Sendable {
+    public let value: Any
+
+    public init(_ value: Any) {
+        self.value = value
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if container.decodeNil() {
+            self.value = NSNull()
+        }
+        else if let bool = try? container.decode(Bool.self) {
+            self.value = bool
+        }
+        else if let int = try? container.decode(Int.self) {
+            self.value = int
+        }
+        else if let double = try? container.decode(Double.self) {
+            self.value = double
+        }
+        else if let string = try? container.decode(String.self) {
+            self.value = string
+        }
+        else if let array = try? container.decode([JSONValue].self) {
+            self.value = array.map { $0.value }
+        }
+        else if let dictionary = try? container.decode([String: JSONValue].self) {
+            self.value = dictionary.mapValues { $0.value }
+        }
+        else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "JSON value cannot be decoded"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+
+        switch value {
+        case is NSNull:
+            try container.encodeNil()
+        case let bool as Bool:
+            try container.encode(bool)
+        case let int as Int:
+            try container.encode(int)
+        case let double as Double:
+            try container.encode(double)
+        case let string as String:
+            try container.encode(string)
+        case let array as [Any]:
+            try container.encode(array.map { JSONValue($0) })
+        case let dictionary as [String: Any]:
+            try container.encode(dictionary.mapValues { JSONValue($0) })
+        default:
+            let context = EncodingError.Context(
+                codingPath: container.codingPath,
+                debugDescription: "JSON value cannot be encoded"
+            )
+            throw EncodingError.invalidValue(value, context)
+        }
+    }
+}
+
+public struct GameAssetRecord: Codable, Sendable {
+    public let appName: String
+    public let assetId: String
+    public let buildVersion: String
+    public let catalogItemId: String
+    public let labelName: String
+    public let namespace: String
+    public let metadata: [String: JSONValue]?
+    public let sidecarRvn: Int?
+}
+
+private struct LibraryItemsResponse: Codable {
+    let records: [LibraryItemRecord]
+    let responseMetadata: ResponseMetadata
+
+    struct ResponseMetadata: Codable {
+        let nextCursor: String?
+    }
+}
+
+public struct LibraryItemRecord: Codable, Sendable {
+    public let appName: String?
+    public let namespace: String
+    public let catalogItemId: String
+    public let sandboxType: String?
+}
+
 public enum GrantType {
     case refreshToken(String)
     case authorizationCode(String)
@@ -115,18 +208,37 @@ public enum GrantType {
     }
 }
 
-// MARK: - Typestate API Client
+// MARK: - API Client
 
-public struct EPCAPIClient<State>: ~Copyable, Sendable {
+public struct EPCAPIClient: Sendable {
     private let clientId: String
     private let clientSecret: String
     private let timeout: Int
     private let session: URLSession
     private let oauthHost = EpicConstants.oauthHost
 
-    public let authData: OAuthResponse?
+    public var authData: OAuthResponse?
 
-    private init(
+    public init(
+        clientId: String = EpicConstants.defaultClientId,
+        clientSecret: String = EpicConstants.defaultClientSecret,
+        timeout: Int
+    ) {
+        let sessionConfig = URLSessionConfiguration.default
+        sessionConfig.httpMaximumConnectionsPerHost = 16
+        sessionConfig.timeoutIntervalForRequest = .init(timeout)
+        sessionConfig.httpAdditionalHeaders = [
+            "User-Agent": EpicConstants.userAgent
+        ]
+
+        self.clientId = clientId
+        self.clientSecret = clientSecret
+        self.timeout = timeout
+        self.session = URLSession(configuration: sessionConfig)
+        self.authData = nil
+    }
+
+    internal init(
         clientId: String,
         clientSecret: String,
         timeout: Int,
@@ -146,6 +258,20 @@ public struct EPCAPIClient<State>: ~Copyable, Sendable {
         return decoder
     }
 
+    private func applyingAuthorizationHeaderIfNeeded(
+        to request: URLRequest
+    ) -> URLRequest {
+        guard request.value(forHTTPHeaderField: "Authorization") == nil,
+              let token = authData?.accessToken
+        else {
+            return request
+        }
+
+        var authorizedRequest = request
+        authorizedRequest.setValue("bearer \(token)", forHTTPHeaderField: "Authorization")
+        return authorizedRequest
+    }
+
     private func url(for host: String, path: String) throws(EPCAPIError) -> URL {
         var components = URLComponents()
         components.scheme = "https"
@@ -158,6 +284,8 @@ public struct EPCAPIClient<State>: ~Copyable, Sendable {
     private func perform<T: Decodable>(
         _ request: URLRequest
     ) async throws(EPCAPIError) -> T {
+        let request = applyingAuthorizationHeaderIfNeeded(to: request)
+
         let data: Data
         let response: URLResponse
 
@@ -172,6 +300,8 @@ public struct EPCAPIClient<State>: ~Copyable, Sendable {
         }
 
         if httpResponse.statusCode >= 400 {
+            let errorString = String(data: data, encoding: .utf8)
+            print("[EPCAPI] request failed status=\(httpResponse.statusCode) body=\(errorString ?? "<binary>")")
             if let apiError = try? Self.jsonDecoder.decode(
                 APIError.self,
                 from: data
@@ -186,7 +316,6 @@ public struct EPCAPIClient<State>: ~Copyable, Sendable {
                 }
                 throw .invalidCredentials(apiError.errorCode)
             }
-            let errorString = String(data: data, encoding: .utf8)
             throw .serverError(httpResponse.statusCode, errorString)
         }
 
@@ -196,38 +325,51 @@ public struct EPCAPIClient<State>: ~Copyable, Sendable {
             throw .decodingError(error)
         }
     }
-}
 
-// MARK: - Unauthenticated State
+    private func performData(
+        _ request: URLRequest
+    ) async throws(EPCAPIError) -> Data {
+        let request = applyingAuthorizationHeaderIfNeeded(to: request)
 
-extension EPCAPIClient where State == Unauthenticated {
+        let data: Data
+        let response: URLResponse
 
-    public init(
-        clientId: String = EpicConstants.defaultClientId,
-        clientSecret: String = EpicConstants.defaultClientSecret,
-        timeout: Int
-    ) {
-        let sessionConfig = URLSessionConfiguration.default
-        sessionConfig.httpMaximumConnectionsPerHost = 16
-        sessionConfig.timeoutIntervalForRequest = .init(timeout)
-        sessionConfig.httpAdditionalHeaders = [
-            "User-Agent": EpicConstants.userAgent
-        ]
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw .networkError(error)
+        }
 
-        let session = URLSession(configuration: sessionConfig)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw .networkError(URLError(.badServerResponse))
+        }
 
-        self.init(
-            clientId: clientId,
-            clientSecret: clientSecret,
-            timeout: timeout,
-            session: session,
-            authData: nil
-        )
+        if httpResponse.statusCode >= 400 {
+            let errorString = String(data: data, encoding: .utf8)
+            print("[EPCAPI] request failed status=\(httpResponse.statusCode) body=\(errorString ?? "<binary>")")
+            if let apiError = try? Self.jsonDecoder.decode(
+                APIError.self,
+                from: data
+            ) {
+                if apiError.errorCode
+                    == "errors.com.epicgames.oauth.corrective_action_required"
+                {
+                    let url = apiError.continuationUrl.flatMap {
+                        URL(string: $0)
+                    }
+                    throw .correctiveActionRequired(apiError.errorMessage, url)
+                }
+                throw .invalidCredentials(apiError.errorCode)
+            }
+            throw .serverError(httpResponse.statusCode, errorString)
+        }
+
+        return data
     }
 
-    public consuming func startSession(
+    public mutating func startSession(
         grantType: GrantType
-    ) async throws(EPCAPIError) -> EPCAPIClient<Authenticated> {
+    ) async throws(EPCAPIError) {
         let url = try url(for: oauthHost, path: "/account/api/oauth/token")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -243,30 +385,87 @@ extension EPCAPIClient where State == Unauthenticated {
         request.httpBody = bodyString.data(using: .utf8)
 
         let oauthResponse: OAuthResponse = try await perform(request)
+        self.authData = oauthResponse
+    }
 
-        return EPCAPIClient<Authenticated>(
-            clientId: clientId,
-            clientSecret: clientSecret,
-            timeout: timeout,
-            session: session,
-            authData: oauthResponse
+    public func getGameAssets(
+        platform: String = "Windows",
+        label: String = "Live"
+    ) async throws(EPCAPIError) -> [GameAssetRecord] {
+        let url = try url(
+            for: EpicConstants.launcherHost,
+            path: "/launcher/api/public/assets/\(platform)"
         )
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "label", value: label)]
+        guard let requestURL = components?.url else {
+            throw .invalidURL
+        }
+
+        let request = URLRequest(url: requestURL)
+        return try await perform(request)
     }
 
-    private func basicAuthHeader() -> String {
-        let credentials = "\(clientId):\(clientSecret)"
-        let encodedCredentials = Data(credentials.utf8).base64EncodedString()
-        return "Basic \(encodedCredentials)"
+    public func getGameInfo(
+        namespace: String,
+        catalogItemId: String,
+        appName: String,
+        platform: String = "Windows"
+    ) async throws(EPCAPIError) -> Data {
+        let url = try url(
+            for: EpicConstants.catalogHost,
+            path: "/catalog/api/shared/namespace/\(namespace)/bulk/items"
+        )
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "id", value: catalogItemId),
+            URLQueryItem(name: "includeDLCDetails", value: "true"),
+            URLQueryItem(name: "includeMainGameDetails", value: "true"),
+            URLQueryItem(name: "country", value: "US"),
+            URLQueryItem(name: "locale", value: "en")
+        ]
+        guard let requestURL = components?.url else {
+            throw .invalidURL
+        }
+
+        return try await performData(URLRequest(url: requestURL))
     }
-}
 
-// MARK: - Authenticated State
+    public func getLibraryItems(
+        includeMetadata: Bool = true
+    ) async throws(EPCAPIError) -> [LibraryItemRecord] {
+        var records: [LibraryItemRecord] = []
+        var cursor: String? = nil
 
-extension EPCAPIClient where State == Authenticated {
+        repeat {
+            let url = try url(
+                for: EpicConstants.libraryHost,
+                path: "/library/api/public/items"
+            )
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            var queryItems = [
+                URLQueryItem(name: "includeMetadata", value: includeMetadata ? "true" : "false")
+            ]
+            if let cursor {
+                queryItems.append(URLQueryItem(name: "cursor", value: cursor))
+            }
+            components?.queryItems = queryItems
+            guard let requestURL = components?.url else {
+                throw .invalidURL
+            }
 
-    public consuming func invalidateSession() async throws(EPCAPIError) -> EPCAPIClient<
-        Unauthenticated
-    > {
+            let page: LibraryItemsResponse = try await perform(URLRequest(url: requestURL))
+            records.append(contentsOf: page.records)
+            cursor = page.responseMetadata.nextCursor
+            if cursor?.isEmpty == true {
+                cursor = nil
+            }
+        } while cursor != nil
+
+        return records
+    }
+
+    public mutating func invalidateSession() async throws(EPCAPIError) {
         guard let token = authData?.accessToken else {
             throw .noTokenProvided
         }
@@ -279,11 +478,13 @@ extension EPCAPIClient where State == Authenticated {
         request.httpMethod = "DELETE"
 
         _ = try? await session.data(for: request)
+        self.authData = nil
+    }
 
-        return EPCAPIClient<Unauthenticated>(
-            clientId: clientId,
-            clientSecret: clientSecret,
-            timeout: timeout
-        )
+    private func basicAuthHeader() -> String {
+        let credentials = "\(clientId):\(clientSecret)"
+        let encodedCredentials = Data(credentials.utf8).base64EncodedString()
+        return "Basic \(encodedCredentials)"
     }
 }
+

@@ -1,51 +1,256 @@
 import Foundation
+import EpicKit
 
 public class Library {
+    private let store: LegendaryFS
+    private let timeout: Int
     // In-memory stores
     private var allGames: Set<String> = []
     private var installedGames: [String: Legendary.InstalledJsonMetadata] = [:]
     private var library: [String: Legendary.GameMetadata] = [:]
+    // Asset cache (mirrors legendary's get_assets caching)
+    private var assetCache: [String: [GameAssetRecord]] = [:]
 
     public init(autoRefresh: Bool = true) {
+        self.store = try! LegendaryFS()
+        self.timeout = 10
+        loadCachedLibrary()
+
         if autoRefresh {
-            _ = try? refreshLegendary()
-            loadGamesInAccount()
-            refreshInstalled()
-            _ = loadAll()
-        }
-    }
-
-    /// Init that skips refresh if files exist in metadata dir
-    public init() {
-        let metadataDir = legendaryMetadata()
-        let hasFiles: Bool = {
-            if let files = try? FileManager.default.contentsOfDirectory(atPath: metadataDir) {
-                return files.contains(where: { $0.hasSuffix(".json") })
+            Task { [weak self] in
+                guard let self else { return }
+                _ = try? await self.refreshLegendary()
             }
-            return false
-        }()
-        if hasFiles {
-            loadGamesInAccount()
-            refreshInstalled()
-            _ = loadAll()
-        } else {
-            _ = try? refreshLegendary()
-            loadGamesInAccount()
-            refreshInstalled()
-            _ = loadAll()
         }
     }
 
-    // MARK: - Refresh Legendary Library (runs CLI, updates metadata)
-    public func refreshLegendary() throws {
-        let runner = LegendaryRunner()
-        let cmd = LegendaryCommand.list(
-            ListCommandOptions(thirdParty: true, forceRefresh: true)
-        )
-        let result = try runner.run(cmd)
-        if !result.success {
-            throw NSError(domain: "LegendaryKit", code: 1, userInfo: [NSLocalizedDescriptionKey: result.standardError])
+    private func loadCachedLibrary() {
+        loadGamesInAccount()
+        refreshInstalled()
+        _ = loadAll()
+    }
+
+    private func cachedClient() async throws -> EpicClient {
+        guard let savedSession = try await store.loadUserSession() else {
+            throw EPCAPIError.invalidCredentials("No saved credentials found.")
         }
+
+        return EpicClient(timeout: timeout, authData: savedSession)
+    }
+
+    private static var assetPlatforms: [String] {
+        #if os(macOS)
+            return ["Windows", "Mac"]
+        #else
+            return ["Windows"]
+        #endif
+    }
+
+    /// Get cached assets for a platform, fetching from API if not cached
+    /// Mirrors legendary's get_assets() caching behavior
+    private func getAssets(
+        platform: String,
+        updateAssets: Bool = false,
+        client: EpicClient
+    ) async throws -> [GameAssetRecord] {
+        // Return cached assets if available and not forcing update
+        if !updateAssets && assetCache[platform] != nil {
+            return assetCache[platform]!
+        }
+
+        // Fetch from API
+        let assets = try await client.getGameAssets(platform: platform)
+        
+        // Cache the result
+        assetCache[platform] = assets
+        
+        return assets
+    }
+
+    private func gameInfoDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+
+    private func loadCatalogGameInfo(
+        client: EpicClient,
+        namespace: String,
+        catalogItemId: String,
+        appName: String,
+        platform: String
+    ) async throws -> Legendary.GameMetadataInner? {
+        let responseData = try await client.getGameInfo(
+            namespace: namespace,
+            catalogItemId: catalogItemId,
+            appName: appName,
+            platform: platform
+        )
+
+        let decoder = gameInfoDecoder()
+        
+        // Try multiple response formats
+        // First, try as a dictionary with items key
+        if let dict = try? decoder.decode([String: [String: Legendary.GameMetadataInner]].self, from: responseData),
+           let items = dict["items"],
+           let metadata = items[catalogItemId] {
+            return metadata
+        }
+        
+        // Try as direct items dictionary
+        if let dict = try? decoder.decode([String: Legendary.GameMetadataInner].self, from: responseData),
+           let metadata = dict[catalogItemId] {
+            return metadata
+        }
+        
+        // Try as a single metadata object (for non-DLC items)
+        if let metadata = try? decoder.decode(Legendary.GameMetadataInner.self, from: responseData) {
+            return metadata
+        }
+        
+        print("[Library] Could not decode game info for \(appName)")
+        return nil
+    }
+
+    private func buildGameMetadata(
+        appName: String,
+        assetsByPlatform: [String: GameAssetRecord],
+        client: EpicClient
+    ) async throws -> Legendary.GameMetadata? {
+        let selectedAsset: (platform: String, asset: GameAssetRecord)
+        if let windowsAsset = assetsByPlatform["Windows"] {
+            selectedAsset = (platform: "Windows", asset: windowsAsset)
+        } else if let firstAsset = assetsByPlatform.first {
+            selectedAsset = (platform: firstAsset.key, asset: firstAsset.value)
+        } else {
+            return nil
+        }
+
+        guard let metadata = try await loadCatalogGameInfo(
+            client: client,
+            namespace: selectedAsset.asset.namespace,
+            catalogItemId: selectedAsset.asset.catalogItemId,
+            appName: appName,
+            platform: selectedAsset.platform
+        ) else {
+            return nil
+        }
+
+        let title = metadata.title ?? appName
+
+        let assetInfos = assetsByPlatform.reduce(into: [String: Legendary.AssetInfo]()) { partialResult, entry in
+            let (platform, asset) = entry
+            partialResult[platform] = Legendary.AssetInfo(
+                appName: asset.appName,
+                assetId: asset.assetId,
+                buildVersion: asset.buildVersion,
+                catalogItemId: asset.catalogItemId,
+                labelName: asset.labelName,
+                metadata: asset.metadata?.mapValues { Legendary.AnyCodable($0.value) } ?? [:],
+                namespace: asset.namespace
+            )
+        }
+
+        return Legendary.GameMetadata(
+            appName: appName,
+            appTitle: title,
+            assetInfos: assetInfos,
+            baseUrls: [],
+            metadata: metadata
+        )
+    }
+
+    // MARK: - Refresh Legendary Library (native API, updates metadata)
+    public func refreshLegendary() async throws {
+        let client = try await cachedClient()
+        var assetMap: [String: [String: GameAssetRecord]] = [:]
+        var fetchedAppNames = Set<String>()
+
+        // Fetch assets for each platform with caching
+        for platform in Self.assetPlatforms {
+            do {
+                let assets = try await getAssets(platform: platform, updateAssets: true, client: client)
+                for asset in assets {
+                    assetMap[asset.appName, default: [:]][platform] = asset
+                    fetchedAppNames.insert(asset.appName)
+                }
+            } catch {
+                print("[Library] Failed to get assets for platform \(platform): \(error)")
+                throw error
+            }
+        }
+
+        let libraryItems: [LibraryItemRecord]
+        do {
+            libraryItems = try await client.getLibraryItems()
+        } catch {
+            print("[Library] Failed to get library items: \(error)")
+            throw error
+        }
+
+        for item in libraryItems {
+            guard let appName = item.appName, !appName.isEmpty else {
+                continue
+            }
+            guard item.namespace.lowercased() != "ue" else {
+                continue
+            }
+            guard item.sandboxType?.uppercased() != "PRIVATE" else {
+                continue
+            }
+            if assetMap[appName] == nil {
+                fetchedAppNames.insert(appName)
+            }
+        }
+
+        let appNamesToRefresh = Set(assetMap.keys).union(fetchedAppNames)
+        for appName in appNamesToRefresh.sorted() {
+            if let assetsByPlatform = assetMap[appName] {
+                do {
+                    if let game = try await buildGameMetadata(appName: appName, assetsByPlatform: assetsByPlatform, client: client) {
+                        try await store.saveGameMetadata(game)
+                    }
+                } catch {
+                    print("[Library] Failed to build/save metadata for \(appName): \(error)")
+                    // Continue with other games instead of failing
+                    continue
+                }
+                continue
+            }
+
+            guard let item = libraryItems.first(where: { $0.appName == appName }) else {
+                continue
+            }
+
+            do {
+                guard let metadata = try await loadCatalogGameInfo(
+                    client: client,
+                    namespace: item.namespace,
+                    catalogItemId: item.catalogItemId,
+                    appName: appName,
+                    platform: "Windows"
+                ) else {
+                    continue
+                }
+                let title = metadata.title ?? appName
+
+                let game = Legendary.GameMetadata(
+                    appName: appName,
+                    appTitle: title,
+                    assetInfos: [:],
+                    baseUrls: [],
+                    metadata: metadata
+                )
+                try await store.saveGameMetadata(game)
+            } catch {
+                print("[Library] Failed to load catalog info for \(appName): \(error)")
+                // Continue with other games instead of failing
+                continue
+            }
+        }
+
+        pruneMetadata(keeping: appNamesToRefresh)
+        loadCachedLibrary()
     }
 
     // MARK: - Load all games in account (scan metadata dir)
@@ -58,6 +263,21 @@ public class Library {
         for file in files where file.hasSuffix(".json") {
             let appName = file.replacingOccurrences(of: ".json", with: "")
             allGames.insert(appName)
+        }
+    }
+
+    private func pruneMetadata(keeping appNames: Set<String>) {
+        let metadataDir = legendaryMetadata()
+        guard let files = try? FileManager.default.contentsOfDirectory(atPath: metadataDir) else {
+            return
+        }
+
+        for file in files where file.hasSuffix(".json") {
+            let appName = String(file.dropLast(5))
+            if !appNames.contains(appName) {
+                let fileURL = URL(fileURLWithPath: metadataDir).appendingPathComponent(file)
+                try? FileManager.default.removeItem(at: fileURL)
+            }
         }
     }
 
@@ -90,6 +310,7 @@ public class Library {
 
     // MARK: - Load all games’ metadata into memory
     public func loadAll() -> [String] {
+        library.removeAll()
         var loaded: [String] = []
         for appName in allGames {
             if loadFile(appName) {

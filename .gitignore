@@ -3,6 +3,7 @@ build/
 cmake-build-*/
 out/
 Build/
+legendary
 
 # CMake generated files
 CMakeCache.txt
