@@ -55,7 +55,7 @@ extension LegendaryCommand {
         _ appName: String,
         from installationDirectory: String,
         platform: LegendaryPlatform? = nil,
-        withDlcs: Bool = false
+        withDlcs: Bool = true
     ) -> LegendaryCommand {
         .import(
             ImportCommandOptions(

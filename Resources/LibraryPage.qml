@@ -121,7 +121,7 @@ Kirigami.Page {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.largeSpacing
-                visible: lvm.detailsLoading || lvm.detailsDownloadSize !== "" || lvm.detailsDiskSize !== ""
+                visible: !lvm.selectedIsInstalled && (lvm.detailsLoading || lvm.detailsDownloadSize !== "" || lvm.detailsDiskSize !== "")
 
                 Controls.BusyIndicator {
                     visible: lvm.detailsLoading
@@ -229,12 +229,24 @@ Kirigami.Page {
                 }
             }
 
-            Controls.Label {
+            ColumnLayout {
                 visible: lvm.selectedIsInstalled
-                text: qsTr("Launch and uninstall support coming soon.")
-                opacity: 0.6
                 Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
+                spacing: Kirigami.Units.smallSpacing
+
+                Controls.Button {
+                    text: qsTr("Run Game")
+                    icon.name: "media-playback-start"
+                    Layout.alignment: Qt.AlignRight
+                    
+                }
+
+                Controls.Label {
+                    text: qsTr("Uninstall")
+                    opacity: 0.6
+                    Layout.fillWidth: true
+                    horizontalAlignment: Qt.AlignRight
+                }
             }
         }
     }

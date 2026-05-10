@@ -203,9 +203,14 @@ public final class LibraryViewModel {
             isImporting = true
             importError = ""
             do {
-                try await library.importGame(appName: appName, installPath: installPath)
+                try await library.importGame(appName: appName, installPath: installPath, withDlcs: true)
                 reloadFromCache()
-                clearSelectedGame()
+
+                if let game = games.asArray.first(where: { $0.appName == appName }) {
+                    game.isInstalled = true
+                }
+
+                selectedIsInstalled = true
                 print("[LibraryViewModel] importGame success: \(appName)")
             } catch {
                 importError = error.localizedDescription

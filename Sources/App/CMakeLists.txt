@@ -26,6 +26,7 @@ target_link_libraries(relic
         EpicKit
         LegendaryKit
         Subprocess
+        SystemPackage
 )
 
 target_compile_options(relic PRIVATE 

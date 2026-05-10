@@ -18,4 +18,5 @@ target_link_libraries(LegendaryKit
         EpicKit
     PRIVATE
         Subprocess    
+        SystemPackage
 )
