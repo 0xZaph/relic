@@ -10,9 +10,12 @@ add_library(LegendaryKit STATIC
     SubProcess/Commands/LegendaryCommand.swift
     SubProcess/Commands/AuthCommand.swift
     SubProcess/Commands/ImportCommand.swift
+    SubProcess/Commands/InfoCommand.swift
 )
 
 target_link_libraries(LegendaryKit
     PUBLIC
         EpicKit
+    PRIVATE
+        Subprocess    
 )

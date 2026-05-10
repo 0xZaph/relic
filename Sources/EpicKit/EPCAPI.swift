@@ -431,6 +431,20 @@ public struct EPCAPIClient: Sendable {
         return try await performData(URLRequest(url: requestURL))
     }
 
+    /// Returns the manifest API response for a game.
+    /// The response contains `elements[0].manifests[].uri` — CDN URLs for the manifest file.
+    public func getGameManifest(
+        namespace: String,
+        catalogItemId: String,
+        appName: String,
+        platform: String = "Windows",
+        label: String = "Live"
+    ) async throws(EPCAPIError) -> Data {
+        let path = "/launcher/api/public/assets/v2/platform/\(platform)/namespace/\(namespace)/catalogItem/\(catalogItemId)/app/\(appName)/label/\(label)"
+        let url = try url(for: EpicConstants.launcherHost, path: path)
+        return try await performData(URLRequest(url: url))
+    }
+
     public func getLibraryItems(
         includeMetadata: Bool = true
     ) async throws(EPCAPIError) -> [LibraryItemRecord] {

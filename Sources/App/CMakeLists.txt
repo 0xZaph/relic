@@ -21,6 +21,7 @@ target_link_libraries(relic
         KirigamiSupport
         EpicKit
         LegendaryKit
+        Subprocess
 )
 
 target_compile_options(relic PRIVATE 

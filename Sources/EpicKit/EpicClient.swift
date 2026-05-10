@@ -67,4 +67,20 @@ public struct EpicClient: Sendable {
     ) async throws(EPCAPIError) -> [LibraryItemRecord] {
         try await api.getLibraryItems(includeMetadata: includeMetadata)
     }
+
+    public func getGameManifest(
+        namespace: String,
+        catalogItemId: String,
+        appName: String,
+        platform: String = "Windows",
+        label: String = "Live"
+    ) async throws(EPCAPIError) -> Data {
+        try await api.getGameManifest(
+            namespace: namespace,
+            catalogItemId: catalogItemId,
+            appName: appName,
+            platform: platform,
+            label: label
+        )
+    }
 }

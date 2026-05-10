@@ -1,6 +1,6 @@
 // MARK: - List Command Options
 
-public struct ListCommandOptions {
+public struct ListCommandOptions: Sendable {
     public var platform: LegendaryPlatform?
     public var includeUE: Bool
     public var thirdParty: Bool

@@ -19,3 +19,10 @@ FetchContent_Declare(QtBridge
     GIT_TAG hooks
 )
 FetchContent_MakeAvailable(QtBridge)
+
+FetchContent_Declare(
+        swift_subprocess
+        GIT_REPOSITORY https://github.com/swiftlang/swift-subprocess.git
+        GIT_TAG 0.4
+)
+FetchContent_MakeAvailable(swift_subprocess)

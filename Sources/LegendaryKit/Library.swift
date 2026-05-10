@@ -14,19 +14,19 @@ public class Library {
     public init(autoRefresh: Bool = true) {
         self.store = try! LegendaryFS()
         self.timeout = 10
-        loadCachedLibrary()
 
-        if autoRefresh {
-            Task { [weak self] in
-                guard let self else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            await self.loadCachedLibrary()
+            if autoRefresh {
                 _ = try? await self.refreshLegendary()
             }
         }
     }
 
-    private func loadCachedLibrary() {
+    private func loadCachedLibrary() async {
         loadGamesInAccount()
-        refreshInstalled()
+        await refreshInstalled()
         _ = loadAll()
     }
 
@@ -256,7 +256,7 @@ public class Library {
         }
 
         pruneMetadata(keeping: appNamesToRefresh)
-        loadCachedLibrary()
+        await loadCachedLibrary()
     }
 
     // MARK: - Load all games in account (scan metadata dir)
@@ -287,20 +287,9 @@ public class Library {
         }
     }
 
-    // MARK: - Refresh installed games (read installed.json)
-    public func refreshInstalled() {
-        installedGames.removeAll()
-        let installedPath = legendaryInstalled()
-        guard let data = try? Data(contentsOf: installedPath) else {
-            return
-        }
-        
-        do {
-            let dict = try JSONDecoder().decode([String: Legendary.InstalledJsonMetadata].self, from: data)
-            installedGames = dict
-        } catch {
-            // ignore decode errors
-        }
+    // MARK: - Refresh installed games (read installed.json via LegendaryFS)
+    public func refreshInstalled() async {
+        installedGames = (try? await store.loadInstalledGames()) ?? [:]
     }
 
     // MARK: - Load a single game’s metadata
@@ -364,6 +353,7 @@ public class Library {
             let description = meta.metadata.description
             let isInstalled = installedGames[appName] != nil
             let installPath = installedGames[appName]?.installPath
+            let platformVersions = meta.assetInfos.mapValues { $0.buildVersion }
             return GameInfo(
                 appName: appName,
                 title: title,
@@ -373,7 +363,8 @@ public class Library {
                 artLogo: artLogo,
                 description: description,
                 isInstalled: isInstalled,
-                installPath: installPath
+                installPath: installPath,
+                platformVersions: platformVersions
             )
         }.sorted { game1, game2 in
             // Installed games first
@@ -412,5 +403,174 @@ public class Library {
             isInstalled: installedGames[meta.appName] != nil,
             installPath: installedGames[meta.appName]?.installPath
         )
+    }
+
+    // MARK: - Installed game management (write path)
+
+    /// Record a game as installed. Updates installed.json and the in-memory cache.
+    public func markGameInstalled(_ metadata: Legendary.InstalledJsonMetadata) async throws {
+        try await store.saveInstalledGame(metadata.appName, metadata)
+        installedGames[metadata.appName] = metadata
+    }
+
+    /// Remove a game from the installed registry. Updates installed.json and the in-memory cache.
+    public func markGameUninstalled(_ appName: String) async throws {
+        try await store.removeInstalledGame(appName)
+        installedGames.removeValue(forKey: appName)
+    }
+
+    // MARK: - Game details (manifest-derived via legendary subprocess)
+
+    /// Fetches manifest info for a game using `legendary info --json`.
+    /// Returns disk size, download size, build version, launch exe, file/chunk counts.
+    public func getGameDetails(appName: String, platform: String = "Windows") async throws -> GameDetails {
+        guard library[appName] != nil else {
+            throw ImportError.gameNotFound(appName)
+        }
+
+        let legendaryPlatform = LegendaryPlatform(rawValue: platform) ?? .windows
+        let command = LegendaryCommand.info(InfoCommandOptions(appName: appName, platform: legendaryPlatform))
+        let binaryPath = legendaryBinaryPath()
+
+        // Run on a background thread so we don't block the main actor
+        let result = try await Task.detached(priority: .userInitiated) {
+            let runner = LegendaryRunner(legendaryPath: binaryPath)
+            return try await runner.run(command)
+        }.value
+
+        // legendary writes JSON to stdout; stderr has log lines we can ignore
+        guard !result.standardOutput.isEmpty else {
+            throw ImportError.gameNotFound(appName)
+        }
+        let data = Data(result.standardOutput.utf8)
+
+        let decoder = JSONDecoder()
+        let info = try decoder.decode(LegendaryInfoOutput.self, from: data)
+
+        guard let manifest = info.manifest else {
+            // No manifest data — game may not be available on this platform
+            throw ImportError.gameNotFound(appName)
+        }
+
+        return GameDetails(
+            appName: appName,
+            buildVersion: manifest.buildVersion,
+            diskSize: manifest.diskSize,
+            downloadSize: manifest.downloadSize,
+            launchExe: manifest.launchExe,
+            numFiles: manifest.numFiles,
+            numChunks: manifest.numChunks,
+            platform: platform
+        )
+    }
+
+    public enum ImportError: Error, LocalizedError {
+        case gameNotFound(String)
+        case pathDoesNotExist(String)
+        case alreadyInstalled(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .gameNotFound(let name):   return "Game '\(name)' not found in your library."
+            case .pathDoesNotExist(let p):  return "Path does not exist: \(p)"
+            case .alreadyInstalled(let n):  return "'\(n)' is already registered as installed."
+            }
+        }
+    }
+
+    /// Import an already-installed game by pointing at its install directory.
+    ///
+    /// Mirrors legendary's `import_game` logic:
+    /// - If `.egstore/<appName>.mancpn` exists and there is no `.egstore/bps` in-progress marker,
+    ///   the install is assumed complete and `needsVerification` is set to `false`.
+    /// - Otherwise `needsVerification = true` so the user knows a repair pass is needed.
+    /// - Manifest fields (version, executable, launch params) are read from `.egstore` when
+    ///   available; otherwise sensible defaults are used.
+    public func importGame(appName: String, installPath: String, platform: String = "Windows") async throws {
+        let path = URL(fileURLWithPath: installPath)
+
+        guard FileManager.default.fileExists(atPath: path.path) else {
+            throw ImportError.pathDoesNotExist(installPath)
+        }
+
+        guard library[appName] != nil else {
+            throw ImportError.gameNotFound(appName)
+        }
+
+        if installedGames[appName] != nil {
+            throw ImportError.alreadyInstalled(library[appName]?.appTitle ?? appName)
+        }
+
+        // --- Probe .egstore for EGL manifest metadata ---
+        var needsVerification = true
+        var version = "0"
+        let executable = ""
+        let launchParameters = ""
+
+        let egstoreURL = path.appendingPathComponent(".egstore")
+        if FileManager.default.fileExists(atPath: egstoreURL.path) {
+            // Look for a .mancpn file matching this appName
+            let mancpnURL = try? FileManager.default.contentsOfDirectory(
+                at: egstoreURL,
+                includingPropertiesForKeys: nil
+            ).first(where: { $0.pathExtension == "mancpn" })
+
+            if let mancpnURL,
+               let mancpnData = try? Data(contentsOf: mancpnURL),
+               let mancpn = try? JSONSerialization.jsonObject(with: mancpnData) as? [String: Any],
+               (mancpn["AppName"] as? String) == appName {
+
+                // Read version from mancpn if present
+                if let v = mancpn["BuildVersion"] as? String { version = v }
+
+                // No in-progress installation marker → assume complete
+                let bpsURL = egstoreURL.appendingPathComponent("bps")
+                let pendingURL = egstoreURL.appendingPathComponent("Pending")
+                let hasBps = FileManager.default.fileExists(atPath: bpsURL.path)
+                let hasPending: Bool = {
+                    guard let contents = try? FileManager.default.contentsOfDirectory(atPath: pendingURL.path) else { return false }
+                    return !contents.isEmpty
+                }()
+                needsVerification = hasBps || hasPending
+            }
+        }
+
+        // Derive install size from disk usage (best-effort)
+        let installSize: Int64 = {
+            guard let enumerator = FileManager.default.enumerator(
+                at: path,
+                includingPropertiesForKeys: [.fileSizeKey],
+                options: [.skipsHiddenFiles]
+            ) else { return 0 }
+            var total: Int64 = 0
+            for case let fileURL as URL in enumerator {
+                total += Int64((try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+            }
+            return total
+        }()
+
+        let meta = Legendary.InstalledJsonMetadata(
+            appName: appName,
+            baseUrls: [],
+            canRunOffline: library[appName]?.metadata.customAttributes?["CanRunOffline"]?.value == "true",
+            eglGuid: "",
+            executable: executable,
+            installPath: installPath,
+            installSize: installSize,
+            installTags: [],
+            isDlc: library[appName]?.metadata.mainGameItem != nil,
+            launchParameters: launchParameters,
+            manifestPath: nil,
+            needsVerification: needsVerification,
+            platform: Legendary.LegendaryInstallPlatform(rawValue: platform) ?? .windows,
+            prereqInfo: nil,
+            requiresOt: library[appName]?.metadata.customAttributes?["OwnershipToken"]?.value.lowercased() == "true",
+            savePath: nil,
+            title: library[appName]?.appTitle ?? appName,
+            version: version
+        )
+
+        try await markGameInstalled(meta)
+        print("[Library] Imported '\(appName)' from \(installPath) (needsVerification: \(needsVerification))")
     }
 }

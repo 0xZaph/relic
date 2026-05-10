@@ -122,4 +122,37 @@ public actor LegendaryFS {
         try FileManager.default.removeItem(at: fileURL)
     }
 
+    private var installedGamesURL: URL {
+        basePath.appendingPathComponent("installed.json")
+    }
+
+    // MARK: - Installed games
+
+    public func loadInstalledGames() throws -> [String: Legendary.InstalledJsonMetadata] {
+        guard FileManager.default.fileExists(atPath: installedGamesURL.path) else {
+            return [:]
+        }
+        let data = try Data(contentsOf: installedGamesURL)
+        return try JSONDecoder().decode([String: Legendary.InstalledJsonMetadata].self, from: data)
+    }
+
+    public func saveInstalledGame(_ appName: String, _ metadata: Legendary.InstalledJsonMetadata) throws {
+        var current = (try? loadInstalledGames()) ?? [:]
+        current[appName] = metadata
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(current)
+        try data.write(to: installedGamesURL, options: .atomic)
+    }
+
+    public func removeInstalledGame(_ appName: String) throws {
+        var current = (try? loadInstalledGames()) ?? [:]
+        guard current[appName] != nil else { return }
+        current.removeValue(forKey: appName)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(current)
+        try data.write(to: installedGamesURL, options: .atomic)
+    }
+
 }

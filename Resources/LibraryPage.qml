@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
 import QtQuick.Effects
+import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
 
 Kirigami.Page {
@@ -19,6 +20,230 @@ Kirigami.Page {
             onTriggered: lvm.refreshLibrary()
         }
     ]
+
+    // Game detail / import sheet
+    Kirigami.OverlaySheet {
+        id: gameSheet
+
+        onVisibleChanged: {
+            if (!visible) lvm.clearSelectedGame()
+        }
+
+        // Open whenever a game is selected
+        Connections {
+            target: lvm
+            function onHasSelectedGameChanged() {
+                if (lvm.hasSelectedGame) {
+                    importPathField.text = ""
+                    gameSheet.open()
+                } else {
+                    gameSheet.close()
+                }
+            }
+        }
+
+        header: RowLayout {
+            spacing: Kirigami.Units.largeSpacing
+            // Fixed height header so the image can't blow up the sheet
+            height: 100
+
+            Rectangle {
+                width: 75
+                height: 100
+                radius: 6
+                color: Kirigami.Theme.alternateBackgroundColor
+                clip: true
+                Layout.alignment: Qt.AlignVCenter
+
+                Image {
+                    anchors.fill: parent
+                    source: lvm.selectedArtSquare !== "" ? lvm.selectedArtSquare
+                          : lvm.selectedArtCover  !== "" ? lvm.selectedArtCover : ""
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    visible: source !== ""
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+
+                Kirigami.Heading {
+                    text: lvm.selectedTitle
+                    level: 2
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+                Controls.Label {
+                    text: lvm.selectedDeveloper
+                    opacity: 0.7
+                }
+                // Platform chips
+                RowLayout {
+                    spacing: 4
+                    visible: lvm.selectedPlatforms !== ""
+                    Repeater {
+                        model: lvm.selectedPlatforms.split(",").map(s => s.trim())
+                        delegate: Rectangle {
+                            required property string modelData
+                            radius: 4
+                            color: Kirigami.Theme.highlightColor
+                            implicitWidth: platformLabel.implicitWidth + 10
+                            implicitHeight: platformLabel.implicitHeight + 4
+                            Controls.Label {
+                                id: platformLabel
+                                anchors.centerIn: parent
+                                text: modelData
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                color: Kirigami.Theme.highlightedTextColor
+                            }
+                        }
+                    }
+                }
+                Controls.Label {
+                    visible: lvm.selectedIsInstalled
+                    text: qsTr("Installed") + (lvm.selectedInstallPath !== ""
+                          ? " · " + lvm.selectedInstallPath : "")
+                    color: Kirigami.Theme.positiveTextColor
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+            }
+        }
+
+        ColumnLayout {
+            width: Math.min(libraryPage.width * 0.9, 500)
+            spacing: Kirigami.Units.largeSpacing
+
+            // Size info row (shown while loading or when data is available)
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.largeSpacing
+                visible: lvm.detailsLoading || lvm.detailsDownloadSize !== "" || lvm.detailsDiskSize !== ""
+
+                Controls.BusyIndicator {
+                    visible: lvm.detailsLoading
+                    running: lvm.detailsLoading
+                    implicitWidth: 24
+                    implicitHeight: 24
+                }
+
+                // Download size
+                RowLayout {
+                    visible: lvm.detailsDownloadSize !== ""
+                    spacing: Kirigami.Units.smallSpacing
+                    Kirigami.Icon {
+                        source: "download"
+                        implicitWidth: 20
+                        implicitHeight: 20
+                    }
+                    ColumnLayout {
+                        spacing: 0
+                        Controls.Label {
+                            text: qsTr("Download Size")
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            opacity: 0.7
+                        }
+                        Controls.Label {
+                            text: lvm.detailsDownloadSize
+                            font.bold: true
+                        }
+                    }
+                }
+
+                // Install size
+                RowLayout {
+                    visible: lvm.detailsDiskSize !== ""
+                    spacing: Kirigami.Units.smallSpacing
+                    Kirigami.Icon {
+                        source: "drive-harddisk"
+                        implicitWidth: 20
+                        implicitHeight: 20
+                    }
+                    ColumnLayout {
+                        spacing: 0
+                        Controls.Label {
+                            text: qsTr("Install Size")
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            opacity: 0.7
+                        }
+                        Controls.Label {
+                            text: lvm.detailsDiskSize
+                            font.bold: true
+                        }
+                    }
+                }
+            }
+
+            // Import section — only for uninstalled games
+            ColumnLayout {
+                visible: !lvm.selectedIsInstalled
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.smallSpacing
+
+                Kirigami.Heading {
+                    text: qsTr("Import Existing Installation")
+                    level: 4
+                }
+
+                Controls.Label {
+                    text: qsTr("If you already have this game installed via the Epic Games Launcher, "
+                               + "point Relic at the install folder to register it without re-downloading.")
+                    wrapMode: Text.Wrap
+                    opacity: 0.8
+                    Layout.fillWidth: true
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Controls.TextField {
+                        id: importPathField
+                        placeholderText: qsTr("Path to install folder…")
+                        Layout.fillWidth: true
+                    }
+
+                    Controls.Button {
+                        text: qsTr("Browse…")
+                        icon.name: "document-open-folder"
+                        onClicked: folderDialog.open()
+                    }
+                }
+
+                Kirigami.InlineMessage {
+                    Layout.fillWidth: true
+                    visible: lvm.importError !== ""
+                    type: Kirigami.MessageType.Error
+                    text: lvm.importError
+                }
+
+                Controls.Button {
+                    text: lvm.isImporting ? qsTr("Importing…") : qsTr("Import Game")
+                    icon.name: "document-import"
+                    enabled: importPathField.text.trim() !== "" && !lvm.isImporting
+                    Layout.alignment: Qt.AlignRight
+                    onClicked: lvm.importGame(lvm.selectedAppName, importPathField.text.trim())
+                }
+            }
+
+            Controls.Label {
+                visible: lvm.selectedIsInstalled
+                text: qsTr("Launch and uninstall support coming soon.")
+                opacity: 0.6
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+            }
+        }
+    }
+
+    // Folder picker for import path
+    FolderDialog {
+        id: folderDialog
+        onAccepted: importPathField.text = selectedFolder.toString().replace("file://", "")
+    }
 
     // Busy indicator in the page header area while refreshing
     Controls.BusyIndicator {
@@ -85,9 +310,11 @@ Kirigami.Page {
 
         delegate: Item {
             required property string title
+            required property string appName
             required property bool isInstalled
             required property string artSquare
             required property string artCover
+            required property string platforms
 
             readonly property string imageUrl: artSquare !== "" ? artSquare
                                              : artCover  !== "" ? artCover
@@ -218,7 +445,7 @@ Kirigami.Page {
                         cursorShape: Qt.PointingHandCursor
                         onEntered: gameCard.scale = 1.05
                         onExited:  gameCard.scale = 1.0
-                        onClicked: console.log("Clicked:", title)
+                        onClicked: lvm.selectGame(appName)
                     }
                 }
 
