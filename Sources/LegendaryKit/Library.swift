@@ -207,6 +207,12 @@ public class Library {
         // Fetch and save metadata for all games concurrently instead of serially
         await withTaskGroup(of: Void.self) { group in
             for appName in appNamesToRefresh {
+                // Skip UE namespace items at the asset level too
+                if let assetsByPlatform = assetMap[appName],
+                   assetsByPlatform.values.contains(where: { $0.namespace.lowercased() == "ue" }) {
+                    continue
+                }
+
                 group.addTask {
                     if let assetsByPlatform = assetMap[appName] {
                         do {
@@ -322,8 +328,31 @@ public class Library {
 
     // MARK: - List all games (returns GameInfo)
     public func getListOfGames() -> [GameInfo] {
-        let games = library.values.map { meta in
+        let games = library.values.compactMap { meta -> GameInfo? in
             let appName = meta.appName
+
+            // Filter: Unreal Engine / Quixel / Fab marketplace items
+            if meta.assetInfos.values.contains(where: { $0.namespace.lowercased() == "ue" }) {
+                return nil
+            }
+
+            let categories = meta.metadata.categories ?? []
+
+            // Filter: DLC (has a parent game)
+            if meta.metadata.mainGameItem != nil {
+                return nil
+            }
+
+            // Filter: mods
+            if categories.contains(where: { $0.path == "mods" }) {
+                return nil
+            }
+
+            // Filter: launchable addons (e.g. Quixel Bridge, Fab)
+            if categories.contains(where: { $0.path == "addons/launchable" }) {
+                return nil
+            }
+
             let title = meta.appTitle
             let developer = meta.metadata.developer
             let keyImages = meta.metadata.keyImages ?? []
@@ -354,7 +383,7 @@ public class Library {
             // Then alphabetically by title
             return game1.title.localizedCaseInsensitiveCompare(game2.title) == .orderedAscending
         }
-        
+
         return games
     }
 
