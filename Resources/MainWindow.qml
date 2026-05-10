@@ -5,14 +5,16 @@ import org.kde.kirigami as Kirigami
 
 Kirigami.ApplicationWindow {
     id: root
-    width: 420
-    height: 560
+    width: 720
+    height: 640
+    minimumWidth: 720
+    minimumHeight: 640
     visible: true
     title: "Relic"
 
     required property var viewModel
 
-    property int currentPage: 0 // 0: Library, 1: Profile, 2: About
+    property int currentPage: 0 // 0: Library, 1: Profile
 
     globalDrawer: Kirigami.GlobalDrawer {
         id: drawer
@@ -28,11 +30,6 @@ Kirigami.ApplicationWindow {
                 text: "Profile"
                 icon.name: "user"
                 onTriggered: root.currentPage = 1
-            },
-            Kirigami.Action {
-                text: "About"
-                icon.name: "help-about"
-                onTriggered: root.currentPage = 2
             },
             Kirigami.Action {
                 text: "Logout"
@@ -51,7 +48,6 @@ Kirigami.ApplicationWindow {
 
     Component { id: libraryPage; LibraryPage { viewModel: root.viewModel } }
     Component { id: profilePage; ProfilePage { viewModel: root.viewModel } }
-    Component { id: aboutPage; AboutPage {} }
 
     Connections {
         target: viewModel.userViewModel
