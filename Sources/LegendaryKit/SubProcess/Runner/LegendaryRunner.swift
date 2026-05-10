@@ -1,10 +1,10 @@
 import Foundation
 import Subprocess
 
-#if canImport(SystemPackage)
-    import SystemPackage
-#else
+#if canImport(Darwin)
     import System
+#else
+    import SystemPackage
 #endif
 
 // MARK: - Command Result
