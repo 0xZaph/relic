@@ -16,11 +16,11 @@ import org.kde.kirigami as Kirigami
             id: loginForm
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 40 
+                anchors.margins: 40
                 spacing: Kirigami.Units.largeSpacing
 
                 Image {
-                    source: "epic_games_logo.svg"
+                    source: "icons/epic-games-logo.svg"
                     sourceSize.width: Kirigami.Units.iconSizes.huge
                     sourceSize.height: Kirigami.Units.iconSizes.huge
                     Layout.alignment: Qt.AlignHCenter
@@ -43,9 +43,9 @@ import org.kde.kirigami as Kirigami
                 
                 Kirigami.Card {
                     Layout.fillWidth: true
+                    padding: Kirigami.Units.largeSpacing * 1.5
                     
                     contentItem: ColumnLayout {
-                        Layout.margins: Kirigami.Units.largeSpacing * 1.5
                         spacing: Kirigami.Units.largeSpacing
 
                         Controls.Label {
@@ -94,9 +94,9 @@ import org.kde.kirigami as Kirigami
 
                 Kirigami.Card {
                     Layout.fillWidth: true
+                    padding: Kirigami.Units.largeSpacing * 1.5
                     
                     contentItem: ColumnLayout {
-                        Layout.margins: Kirigami.Units.largeSpacing * 1.5
                         spacing: Kirigami.Units.largeSpacing
 
                         Controls.Label {
@@ -159,7 +159,7 @@ import org.kde.kirigami as Kirigami
             }
         }
 
-                Component {
+            Component {
             id: profileInfo
             ColumnLayout {
                 anchors.fill: parent
@@ -169,10 +169,10 @@ import org.kde.kirigami as Kirigami
                 Kirigami.Card {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignTop
+                    padding: Kirigami.Units.largeSpacing
                     
                     contentItem: ColumnLayout {
                         spacing: Kirigami.Units.largeSpacing
-                        Layout.margins: Kirigami.Units.largeSpacing
 
                         Rectangle {
                             Layout.preferredWidth: 96

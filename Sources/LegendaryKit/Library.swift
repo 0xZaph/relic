@@ -375,7 +375,6 @@ public class Library {
             // Then alphabetically by title
             return game1.title.localizedCaseInsensitiveCompare(game2.title) == .orderedAscending
         }
-        
         return games
     }
 

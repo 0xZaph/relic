@@ -43,7 +43,7 @@ Kirigami.ApplicationWindow {
     Loader {
         id: pageLoader
         anchors.fill: parent
-        sourceComponent: !viewModel.userViewModel.isLoggedIn ? profilePage : (root.currentPage === 0 ? libraryPage : (root.currentPage === 1 ? profilePage : aboutPage))
+        sourceComponent: !viewModel.userViewModel.isLoggedIn ? profilePage : (root.currentPage === 0 ? libraryPage : profilePage)
     }
 
     Component { id: libraryPage; LibraryPage { viewModel: root.viewModel } }
