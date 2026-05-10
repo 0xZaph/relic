@@ -4,7 +4,11 @@ set(QML_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/MainWindow.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/ProfilePage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/LibraryPage.qml
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/AboutPage.qml
+)
+
+set(RESOURCE_FILES
+    ${QML_FILES}
+    "Resources/icons/epic-games-logo.svg"
 )
 
 add_executable(relic
