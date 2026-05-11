@@ -888,12 +888,12 @@ public class Library {
             throw ImportError.pathDoesNotExist(installPath)
         }
 
-        guard let app = library[appName] else {
+        guard library[appName] != nil else {
             throw ImportError.gameNotFound(appName)
         }
 
         if installedGames[appName] != nil {
-            throw ImportError.alreadyInstalled(app.appTitle)
+            throw ImportError.alreadyInstalled(appName)
         }
         let legendaryPlatform = LegendaryPlatform(rawValue: platform) ?? .windows
         let command = LegendaryCommand.importGame(
