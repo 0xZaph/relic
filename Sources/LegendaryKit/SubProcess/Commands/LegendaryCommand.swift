@@ -3,6 +3,7 @@
 public enum LegendaryCommand: Sendable {
     case auth(AuthCommandOptions)
     case `import`(ImportCommandOptions)
+    case install(InstallCommandOptions)
     case list(ListCommandOptions)
     case info(InfoCommandOptions)
     case none
@@ -15,6 +16,7 @@ public enum LegendaryCommand: Sendable {
         switch self {
         case .auth(let options):    args += options.toArguments()
         case .import(let options):  args += options.toArguments()
+        case .install(let options): args += options.toArguments()
         case .list(let options):    args += options.toArguments()
         case .info(let options):    args += options.toArguments()
         case .none:                 break
@@ -27,6 +29,7 @@ public enum LegendaryCommand: Sendable {
         switch self {
         case .auth(let options):    args += options.toArguments()
         case .import(let options):  args += options.toArguments()
+        case .install(let options): args += options.toArguments()
         case .list(let options):    args += options.toArguments()
         case .info(let options):    args += options.toArguments()
         case .none:                 break
@@ -61,6 +64,23 @@ extension LegendaryCommand {
             ImportCommandOptions(
                 appName: appName,
                 installationDirectory: installationDirectory,
+                withDlcs: withDlcs,
+                platform: platform
+            )
+        )
+    }
+
+    /// Create an install command
+    public static func installGame(
+        _ appName: String,
+        basePath: String? = nil,
+        platform: LegendaryPlatform? = nil,
+        withDlcs: Bool = true
+    ) -> LegendaryCommand {
+        .install(
+            InstallCommandOptions(
+                appName: appName,
+                basePath: basePath,
                 withDlcs: withDlcs,
                 platform: platform
             )

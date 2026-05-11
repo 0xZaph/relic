@@ -12,6 +12,7 @@ add_library(LegendaryKit STATIC
     SubProcess/Commands/LegendaryCommand.swift
     SubProcess/Commands/AuthCommand.swift
     SubProcess/Commands/ImportCommand.swift
+    SubProcess/Commands/InstallCommand.swift
     SubProcess/Commands/InfoCommand.swift
 )
 

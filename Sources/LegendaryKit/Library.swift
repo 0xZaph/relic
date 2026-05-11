@@ -16,6 +16,17 @@ public class Library {
         self.timeout = 10
     }
 
+    private func cleanupLegendaryLocks() async {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["killall", "legendary"]
+        try? process.run()
+        process.waitUntilExit()
+
+        let lockURL = URL(fileURLWithPath: legendaryConfigPath()).appendingPathComponent("installed.json.lock")
+        try? FileManager.default.removeItem(at: lockURL)
+    }
+
     public func initializeCache(autoRefresh: Bool = true) async {
         await self.loadCachedLibrary()
         if autoRefresh {
@@ -884,6 +895,8 @@ public class Library {
     public func importGame(
         appName: String, installPath: String, platform: String = "Windows", withDlcs: Bool = true
     ) async throws {
+        await cleanupLegendaryLocks()
+
         guard FileManager.default.fileExists(atPath: installPath) else {
             throw ImportError.pathDoesNotExist(installPath)
         }
@@ -908,7 +921,7 @@ public class Library {
         print("[Library] Importing '\(appName)' from \(installPath) using legendary...")
         let result = try await runner.run(command, options: RunnerOptions(logOutput: true))
         print("[Library] Legendary import command completed with exit code \(result.exitCode)")
-        if !result.success {
+        if result.exitCode != 0 {
             throw LegendaryError.commandFailed(exitCode: result.exitCode, stderr: result.standardError)
         }
 
@@ -916,6 +929,117 @@ public class Library {
 
         print("[Library] Imported '\(appName)' from \(installPath)")
     }
+
+    /// Returns the registered install path for a game, or nil if not installed.
+    /// Reads from the in-memory cache populated by the last `refreshInstalled()` call.
+    public func installedPath(for appName: String) -> String? {
+        return installedGames[appName]?.installPath
+    }
+
+    /// Download a game using legendary install, then auto-import it.
+    ///
+    /// After `legendary install` completes, legendary may or may not have written to
+    /// `installed.json`. We check both possibilities:
+    ///   1. If it DID register itself — use that path and import (alreadyInstalled is fine).
+    ///   2. If it did NOT register — scan the install base dir for the game's folder
+    ///      by looking for `.egstore/<appName>.*`, then import from there.
+    public func downloadGame(
+        appName: String, basePath: String? = nil, platform: String = "Windows", withDlcs: Bool = true,
+        onProgress: @escaping @Sendable (Double, String) -> Void = { _, _ in }
+    ) async throws {
+        await cleanupLegendaryLocks()
+
+        guard library[appName] != nil else {
+            throw ImportError.gameNotFound(appName)
+        }
+
+        if installedGames[appName] != nil {
+            throw ImportError.alreadyInstalled(appName)
+        }
+
+        let legendaryPlatform = LegendaryPlatform(rawValue: platform) ?? .windows
+        let command = LegendaryCommand.installGame(
+            appName,
+            basePath: basePath,
+            platform: legendaryPlatform,
+            withDlcs: withDlcs
+        )
+
+        let binaryPath = legendaryBinaryPath()
+        let runner = LegendaryRunner(legendaryPath: binaryPath)
+        print("[Library] Downloading '\(appName)' using legendary...")
+        let result = try await runner.runWithProgress(
+            command, options: RunnerOptions(logOutput: true), onProgress: onProgress)
+
+        if result.exitCode != 0 {
+            throw LegendaryError.commandFailed(exitCode: result.exitCode, stderr: result.standardError)
+        }
+
+        await refreshInstalled()
+
+        let installPath: String
+
+        if let registered = installedGames[appName]?.installPath {
+            installPath = registered
+        } else {
+            print("[Library] '\(appName)' not in installed.json — scanning for install dir...")
+            guard let found = findInstallDir(appName: appName, basePath: basePath) else {
+                print("[Library] ERROR: could not locate install dir for '\(appName)' — import skipped")
+                return
+            }
+            installPath = found
+        }
+
+        // Run legendary import using the resolved path (mirrors the manual workflow).
+        do {
+            try await importGame(appName: appName, installPath: installPath, platform: platform, withDlcs: withDlcs)
+            print("[Library] '\(appName)' imported successfully from \(installPath)")
+        } catch ImportError.alreadyInstalled {
+        } catch {
+            print("[Library] importGame threw unexpected error: \(error)")
+        }
+    }
+
+    /// Scans the legendary install base directory for the game's install folder.
+    ///
+    /// Legendary names the folder after the game title (not the appName), so we can't
+    /// guess it directly. Instead we look for a subfolder whose `.egstore` directory
+    /// contains a file whose name starts with `appName` — the definitive EGL marker.
+    private func findInstallDir(appName: String, basePath: String?) -> String? {
+        let baseDir: String
+        if let explicit = basePath, !explicit.isEmpty {
+            baseDir = explicit
+        } else if let configured = readLegendaryConfig(appName: "Legendary", key: "install_path"),
+                  !configured.isEmpty {
+            baseDir = configured
+        } else {
+            baseDir = URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent("Games").path
+        }
+
+        let fm = FileManager.default
+        guard let candidates = try? fm.contentsOfDirectory(atPath: baseDir) else {
+            print("[Library] findInstallDir: cannot list '\(baseDir)'")
+            return nil
+        }
+
+        for folder in candidates {
+            let folderURL = URL(fileURLWithPath: baseDir).appendingPathComponent(folder)
+            let egstoreURL = folderURL.appendingPathComponent(".egstore")
+            var isDir: ObjCBool = false
+            let egstoreExists = fm.fileExists(atPath: egstoreURL.path, isDirectory: &isDir)
+            guard egstoreExists, isDir.boolValue else { continue }
+
+            let egFiles = (try? fm.contentsOfDirectory(atPath: egstoreURL.path)) ?? []
+            if egFiles.contains(where: { $0.hasPrefix(appName) }) {
+                return folderURL.path
+            }
+        }
+
+        print("[Library] findInstallDir: no match for '\(appName)' in '\(baseDir)'")
+        return nil
+    }
+
 
     /// Launches a game using the provided parameters.
     /// Spawns a background process and returns immediately.

@@ -89,6 +89,13 @@ public final class LibraryViewModel {
     public var importError: String = ""
     public var isImporting: Bool = false
 
+    public var downloadError: String = ""
+    public var isDownloading: Bool = false
+    /// The appName currently being downloaded, or "" if no download is active.
+    public var downloadingAppName: String = ""
+    public var downloadProgress: Double = 0.0
+    public var downloadETA: String = ""
+
     // Launch / dry-run state
     public var isLaunching: Bool = false
     public var launchError: String = ""
@@ -222,6 +229,8 @@ public final class LibraryViewModel {
         importError = ""
         launchError = ""
         launchOutput = ""
+        downloadError = ""
+        downloadingAppName = ""
         wineInstallationNames = ""
         wineInstallationBins = ""
         selectedWineIndex = 0
@@ -335,6 +344,46 @@ public final class LibraryViewModel {
                 print("[LibraryViewModel] importGame failed: \(error.localizedDescription)")
             }
             isImporting = false
+        }
+    }
+
+    public func downloadGame(appName: String, basePath: String) {
+        Task {
+            isDownloading = true
+            downloadingAppName = appName
+            downloadError = ""
+            downloadProgress = 0.0
+            downloadETA = ""
+            do {
+                // Library.downloadGame handles the install AND imports the game 
+                // using the path recorded in installed.json.
+                try await library.downloadGame(appName: appName, basePath: basePath.isEmpty ? nil : basePath, withDlcs: true) { [weak self] progress, eta in
+                    Task { @MainActor in
+                        self?.downloadProgress = progress
+                        self?.downloadETA = eta
+                    }
+                }
+
+                isDownloading = false
+                downloadingAppName = ""
+                downloadProgress = 0.0
+                downloadETA = ""
+
+                reloadFromCache()
+
+                if let game = games.asArray.first(where: { $0.appName == appName }) {
+                    game.isInstalled = true
+                }
+                selectedIsInstalled = true
+                print("[LibraryViewModel] downloadGame complete: \(appName)")
+            } catch {
+                downloadError = error.localizedDescription
+                print("[LibraryViewModel] downloadGame failed: \(error.localizedDescription)")
+                isDownloading = false
+                downloadingAppName = ""
+                downloadProgress = 0.0
+                downloadETA = ""
+            }
         }
     }
 }
