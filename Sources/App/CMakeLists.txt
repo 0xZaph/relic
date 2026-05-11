@@ -4,6 +4,8 @@ set(QML_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/MainWindow.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/ProfilePage.qml
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/LibraryPage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/StorePage.qml
+
 )
 
 set(RESOURCE_FILES

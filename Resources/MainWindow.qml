@@ -15,7 +15,7 @@ Kirigami.ApplicationWindow {
 
     required property var viewModel
 
-    property int currentPage: 0 // 0: Library, 1: Profile
+    property int currentPage: 0 // 0: Library, 1: Profile, 2: Store
 
 
     globalDrawer: Kirigami.GlobalDrawer {
@@ -34,6 +34,11 @@ Kirigami.ApplicationWindow {
                 onTriggered: root.currentPage = 1
             },
             Kirigami.Action {
+                text: "Store"
+                icon.name: "system-software-install"
+                onTriggered: root.currentPage = 2
+            },
+            Kirigami.Action {
                 text: "Logout"
                 icon.name: "system-log-out"
                 enabled: viewModel.userViewModel.isLoggedIn
@@ -45,11 +50,12 @@ Kirigami.ApplicationWindow {
     Loader {
         id: pageLoader
         anchors.fill: parent
-        sourceComponent: !viewModel.userViewModel.isLoggedIn ? profilePage : (root.currentPage === 0 ? libraryPage : profilePage)
+        sourceComponent: !viewModel.userViewModel.isLoggedIn ? profilePage : (root.currentPage === 0 ? libraryPage : (root.currentPage === 2 ? storePage : profilePage))
     }
 
     Component { id: libraryPage; LibraryPage { viewModel: root.viewModel } }
     Component { id: profilePage; ProfilePage { viewModel: root.viewModel } }
+    Component { id: storePage; StorePage { viewModel: root.viewModel } }
 
     Connections {
         target: viewModel.userViewModel
