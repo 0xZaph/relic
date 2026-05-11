@@ -178,6 +178,44 @@ Kirigami.Page {
                 }
             }
 
+            // Wine picker (macOS only, for Windows games)
+            ColumnLayout {
+                visible: lvm.wineInstallationNames !== "" && lvm.selectedPlatforms.indexOf("Windows") !== -1
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.smallSpacing
+
+                Kirigami.Heading {
+                    text: qsTr("Wine / Compatibility Layer")
+                    level: 4
+                }
+
+                Controls.ComboBox {
+                    id: winePicker
+                    Layout.fillWidth: true
+                    model: lvm.wineInstallationNames !== ""
+                           ? lvm.wineInstallationNames.split("|||")
+                           : []
+                    currentIndex: lvm.selectedWineIndex
+                    onActivated: lvm.selectWine(currentIndex)
+                }
+            }
+
+            // Busy indicator while detecting wine
+            RowLayout {
+                visible: lvm.wineDetecting && lvm.selectedPlatforms.indexOf("Windows") !== -1
+                spacing: Kirigami.Units.smallSpacing
+                Controls.BusyIndicator {
+                    running: lvm.wineDetecting
+                    implicitWidth: 20
+                    implicitHeight: 20
+                }
+                Controls.Label {
+                    text: qsTr("Detecting Wine installations…")
+                    opacity: 0.7
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+            }
+
             // Import section — only for uninstalled games
             ColumnLayout {
                 visible: !lvm.selectedIsInstalled
@@ -236,43 +274,6 @@ Kirigami.Page {
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing
 
-                // Wine picker (macOS only)
-                ColumnLayout {
-                    visible: lvm.wineInstallationNames !== ""
-                    Layout.fillWidth: true
-                    spacing: Kirigami.Units.smallSpacing
-
-                    Kirigami.Heading {
-                        text: qsTr("Wine / Compatibility Layer")
-                        level: 4
-                    }
-
-                    Controls.ComboBox {
-                        id: winePicker
-                        Layout.fillWidth: true
-                        model: lvm.wineInstallationNames !== ""
-                               ? lvm.wineInstallationNames.split("|||")
-                               : []
-                        currentIndex: lvm.selectedWineIndex
-                        onActivated: lvm.selectWine(currentIndex)
-                    }
-                }
-
-                // Busy indicator while detecting wine
-                RowLayout {
-                    visible: lvm.wineDetecting
-                    spacing: Kirigami.Units.smallSpacing
-                    Controls.BusyIndicator {
-                        running: lvm.wineDetecting
-                        implicitWidth: 20
-                        implicitHeight: 20
-                    }
-                    Controls.Label {
-                        text: qsTr("Detecting Wine installations…")
-                        opacity: 0.7
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                    }
-                }
 
                 // Launch error message
                 Kirigami.InlineMessage {

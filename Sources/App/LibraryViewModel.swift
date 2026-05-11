@@ -268,12 +268,11 @@ public final class LibraryViewModel {
                       detectedWineInstallations[selectedWineIndex].type == .crossover
                 else { return nil }
                 let bin = detectedWineInstallations[selectedWineIndex].bin
-                return URL(fileURLWithPath: bin)
-                    .deletingLastPathComponent()   // bin/
-                    .deletingLastPathComponent()   // CrossOver/
-                    .deletingLastPathComponent()   // SharedSupport/
-                    .deletingLastPathComponent()   // Contents/
-                    .path
+                var current = URL(fileURLWithPath: bin)
+                while current.path != "/" && current.pathExtension != "app" {
+                    current = current.deletingLastPathComponent()
+                }
+                return current.pathExtension == "app" ? current.path : nil
             }()
 
             do {

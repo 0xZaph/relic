@@ -571,7 +571,7 @@ public class Library {
                     ?? readLegendaryConfig(appName: appName, key: "crossover_app")
                     ?? readLegendaryConfig(appName: "default", key: "crossover_app")
 
-                if resolvedCXApp == nil {
+                if resolvedCXApp == nil && wineBinary == nil {
                     // Auto-detect CrossOver unless disabled in config
                     let disableAutoCX =
                         readLegendaryConfig(appName: "Legendary", key: "disable_auto_crossover")

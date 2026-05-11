@@ -42,8 +42,9 @@ public struct WineDetector: Sendable {
             async let skin = getWineskinWine()
             async let gptk = getGamePortingToolkitWine()
             async let wsky = getWhisky()
+            async let hroic = getHeroicWine()
 
-            let all = await cx + wine + skin + gptk + wsky
+            let all = await cx + wine + skin + gptk + wsky + hroic
             // Deduplicate by bin path, preserving order (CrossOver first)
             var seen = Set<String>()
             return all.filter { seen.insert($0.bin).inserted }
@@ -69,7 +70,7 @@ public struct WineDetector: Sendable {
                 else { continue }
 
                 let wineBin = URL(fileURLWithPath: appPath)
-                    .appendingPathComponent("SharedSupport/CrossOver/bin/wine")
+                    .appendingPathComponent("Contents/SharedSupport/CrossOver/bin/wine")
                     .path
                 guard FileManager.default.fileExists(atPath: wineBin) else { continue }
 
@@ -246,7 +247,59 @@ public struct WineDetector: Sendable {
         #endif
     }
 
+    public func getHeroicWine() async -> [WineInstallation] {
+        #if os(macOS)
+            let heroicPath = heroicToolsPath()
+            var results: [WineInstallation] = []
+
+            // Heroic stores wine versions in subfolders of 'tools'
+            // Structure varies: tools/wine/xyz or tools/game-porting-toolkit/xyz
+            let types: [WineInstallation.WineType] = [.wine, .toolkit]
+            let subdirs = ["wine", "game-porting-toolkit"]
+
+            for (type, subdir) in zip(types, subdirs) {
+                let searchPath = heroicPath.appendingPathComponent(subdir)
+                guard let entries = try? FileManager.default.contentsOfDirectory(
+                    at: searchPath, includingPropertiesForKeys: nil
+                ) else { continue }
+
+                for entry in entries {
+                    // Try different possible binary locations
+                    let candidates = [
+                        "Contents/Resources/wine/bin/wine64",
+                        "Contents/SharedSupport/wine/bin/wine64",
+                        "bin/wine64",
+                        "bin/wine"
+                    ]
+
+                    for relPath in candidates {
+                        let wineBin = entry.appendingPathComponent(relPath).path
+                        if FileManager.default.fileExists(atPath: wineBin) {
+                            let name = entry.lastPathComponent
+                            results.append(WineInstallation(
+                                bin: wineBin,
+                                name: "Heroic - \(name)",
+                                type: type,
+                                wineserver: wineserverPath(near: wineBin)
+                            ))
+                            break
+                        }
+                    }
+                }
+            }
+            return results
+        #else
+            return []
+        #endif
+    }
+
     // MARK: - Helpers
+
+    /// Path to the Heroic Games Launcher tools folder.
+    private func heroicToolsPath() -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("heroic/tools")
+    }
 
     /// Path to the Relic app-support tools folder.
     private func relicToolsPath() -> URL {
