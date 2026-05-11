@@ -48,6 +48,15 @@ public struct WineDetector: Sendable {
             // Deduplicate by bin path, preserving order (CrossOver first)
             var seen = Set<String>()
             return all.filter { seen.insert($0.bin).inserted }
+        #elseif os(Linux)
+            async let sys = getSystemWine()
+            async let heroic = getHeroicWineLinux()
+            async let steam = getSteamProton()
+            async let relic = getRelicWineLinux()
+
+            let all = await sys + heroic + steam + relic
+            var seen = Set<String>()
+            return all.filter { seen.insert($0.bin).inserted }
         #else
             return []
         #endif
@@ -292,6 +301,117 @@ public struct WineDetector: Sendable {
             return []
         #endif
     }
+
+    // MARK: - Linux Detection
+
+    #if os(Linux)
+    public func getSystemWine() async -> [WineInstallation] {
+        var results: [WineInstallation] = []
+        let candidates = ["/usr/bin/wine64", "/usr/bin/wine"]
+        for bin in candidates {
+            if FileManager.default.fileExists(atPath: bin) {
+                let version = (try? shellVersion(bin)) ?? "System Wine"
+                results.append(WineInstallation(
+                    bin: bin,
+                    name: version,
+                    type: .wine,
+                    wineserver: wineserverPath(near: bin)
+                ))
+            }
+        }
+        return results
+    }
+
+    public func getHeroicWineLinux() async -> [WineInstallation] {
+        var results: [WineInstallation] = []
+        let configHomeStr = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config").path
+        let heroicPath = URL(fileURLWithPath: configHomeStr).appendingPathComponent("heroic/tools")
+        let subdirs = ["wine", "proton"]
+        let types: [WineInstallation.WineType] = [.wine, .toolkit]
+
+        for (type, subdir) in zip(types, subdirs) {
+            let searchPath = heroicPath.appendingPathComponent(subdir)
+            guard let entries = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) else { continue }
+            
+            for entry in entries {
+                let candidates = ["bin/wine64", "bin/wine", "files/bin/wine64", "files/bin/wine"]
+                for rel in candidates {
+                    let bin = entry.appendingPathComponent(rel).path
+                    if FileManager.default.fileExists(atPath: bin) {
+                        results.append(WineInstallation(
+                            bin: bin,
+                            name: "Heroic - \(entry.lastPathComponent)",
+                            type: type,
+                            wineserver: wineserverPath(near: bin)
+                        ))
+                        break
+                    }
+                }
+            }
+        }
+        return results
+    }
+
+    public func getSteamProton() async -> [WineInstallation] {
+        var results: [WineInstallation] = []
+        let steamPaths = [
+            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".steam/root/compatibilitytools.d"),
+            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".local/share/Steam/compatibilitytools.d"),
+            URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".steam/steam/steamapps/common")
+        ]
+        
+        for searchPath in steamPaths {
+            guard let entries = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) else { continue }
+            for entry in entries {
+                let name = entry.lastPathComponent
+                if !name.lowercased().contains("proton") { continue }
+                let candidates = ["files/bin/wine64", "bin/wine64", "bin/wine"]
+                for rel in candidates {
+                    let bin = entry.appendingPathComponent(rel).path
+                    if FileManager.default.fileExists(atPath: bin) {
+                        results.append(WineInstallation(
+                            bin: bin,
+                            name: name,
+                            type: .toolkit,
+                            wineserver: wineserverPath(near: bin)
+                        ))
+                        break
+                    }
+                }
+            }
+        }
+        return results
+    }
+
+    public func getRelicWineLinux() async -> [WineInstallation] {
+        var results: [WineInstallation] = []
+        let toolsPath = relicToolsPath()
+        let subdirs = ["wine", "proton"]
+        let types: [WineInstallation.WineType] = [.wine, .toolkit]
+
+        for (type, subdir) in zip(types, subdirs) {
+            let searchPath = toolsPath.appendingPathComponent(subdir)
+            guard let entries = try? FileManager.default.contentsOfDirectory(at: searchPath, includingPropertiesForKeys: nil) else { continue }
+            
+            for entry in entries {
+                let candidates = ["bin/wine64", "bin/wine", "files/bin/wine64", "files/bin/wine"]
+                for rel in candidates {
+                    let bin = entry.appendingPathComponent(rel).path
+                    if FileManager.default.fileExists(atPath: bin) {
+                        results.append(WineInstallation(
+                            bin: bin,
+                            name: "Relic - \(entry.lastPathComponent)",
+                            type: type,
+                            wineserver: wineserverPath(near: bin)
+                        ))
+                        break
+                    }
+                }
+            }
+        }
+        return results
+    }
+    #endif
 
     // MARK: - Helpers
 
