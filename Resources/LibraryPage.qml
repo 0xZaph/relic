@@ -364,7 +364,7 @@ Kirigami.Page {
 
         cellWidth: cardWidth + cardSpacing
         cellHeight: cardHeight + cardSpacing + 28  // 28px for title below card
-        cacheBuffer: height
+        cacheBuffer: cellHeight * 2
 
         model: lvm.games
         visible: !lvm.isRefreshing
@@ -411,9 +411,14 @@ Kirigami.Page {
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         smooth: true
-                        sourceSize.width: gamesGrid.cardWidth * 2
-                        sourceSize.height: gamesGrid.cardHeight * 2
+                        cache: false // Force eviction from RAM since we have disk cache
+                        sourceSize.width: gamesGrid.cardWidth * 1.25
+                        sourceSize.height: gamesGrid.cardHeight * 1.25
                         visible: false
+                        opacity: status === Image.Ready ? 1.0 : 0.0
+                        Behavior on opacity {
+                            NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+                        }
                     }
 
                     // Rounded mask for MultiEffect
@@ -433,11 +438,16 @@ Kirigami.Page {
                     MultiEffect {
                         anchors.fill: parent
                         source: coverImage
-                        visible: coverImage.status === Image.Ready
+                        visible: coverImage.opacity > 0
+                        opacity: coverImage.opacity
                         colorization: (isInstalled || cardHover.containsMouse) ? 0.0 : 0.85
                         colorizationColor: "#808080"
                         maskEnabled: true
                         maskSource: roundedMask
+
+                        Behavior on colorization {
+                            NumberAnimation { duration: 200 }
+                        }
                     }
 
                     // Placeholder while loading or no URL
@@ -445,7 +455,7 @@ Kirigami.Page {
                         anchors.fill: parent
                         radius: 12
                         color: "#2a2a2a"
-                        visible: coverImage.status !== Image.Ready
+                        visible: coverImage.opacity < 1.0
 
                         Kirigami.Icon {
                             anchors.centerIn: parent

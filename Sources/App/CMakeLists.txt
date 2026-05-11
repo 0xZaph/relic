@@ -47,6 +47,13 @@ if(APPLE)
             MACOSX_PACKAGE_LOCATION Resources
         )
     endforeach()
+
+    # Bundle icons directory
+    file(GLOB ICON_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/icons/*.svg")
+    set_source_files_properties(${ICON_FILES} PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources/icons
+    )
+    target_sources(relic PRIVATE ${ICON_FILES})
 else()
     foreach(qml ${QML_FILES})
         add_custom_command(
