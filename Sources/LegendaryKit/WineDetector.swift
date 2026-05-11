@@ -324,7 +324,8 @@ public struct WineDetector: Sendable {
 
     public func getHeroicWineLinux() async -> [WineInstallation] {
         var results: [WineInstallation] = []
-        let heroicPath = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config/heroic/tools")
+        let configHomeStr = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"] ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".config").path
+        let heroicPath = URL(fileURLWithPath: configHomeStr).appendingPathComponent("heroic/tools")
         let subdirs = ["wine", "proton"]
         let types: [WineInstallation.WineType] = [.wine, .toolkit]
 
@@ -364,7 +365,7 @@ public struct WineDetector: Sendable {
             for entry in entries {
                 let name = entry.lastPathComponent
                 if !name.lowercased().contains("proton") { continue }
-                let candidates = ["proton", "files/bin/wine64", "bin/wine64", "bin/wine"]
+                let candidates = ["files/bin/wine64", "bin/wine64", "bin/wine"]
                 for rel in candidates {
                     let bin = entry.appendingPathComponent(rel).path
                     if FileManager.default.fileExists(atPath: bin) {
