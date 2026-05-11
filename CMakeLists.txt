@@ -3,6 +3,7 @@ project(relic LANGUAGES CXX Swift)
 
 find_package(ECM REQUIRED NO_MODULE)
 set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH} ${CMAKE_MODULE_PATH})
+find_package(Qt6 REQUIRED COMPONENTS Widgets QuickControls2 Qml Quick WebView)
 find_package(Qt6 REQUIRED COMPONENTS Widgets QuickControls2 Qml Quick QuickDialogs2)
 find_package(KF6 REQUIRED COMPONENTS Kirigami I18n CoreAddons IconThemes)
 find_package(Python3 REQUIRED)
