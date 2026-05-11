@@ -92,7 +92,10 @@ public final class LibraryViewModel {
     public init() {
         self.library = Library(autoRefresh: false)
         print("[LibraryViewModel] init")
-        reloadFromCache()
+        Task {
+            await self.library.initializeCache(autoRefresh: false)
+            self.reloadFromCache()
+        }
     }
 
     public func reloadFromCache() {

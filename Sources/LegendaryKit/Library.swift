@@ -14,13 +14,12 @@ public class Library {
     public init(autoRefresh: Bool = true) {
         self.store = try! LegendaryFS()
         self.timeout = 10
+    }
 
-        Task { [weak self] in
-            guard let self else { return }
-            await self.loadCachedLibrary()
-            if autoRefresh {
-                _ = try? await self.refreshLegendary()
-            }
+    public func initializeCache(autoRefresh: Bool = true) async {
+        await self.loadCachedLibrary()
+        if autoRefresh {
+            _ = try? await self.refreshLegendary()
         }
     }
 
@@ -575,9 +574,9 @@ public class Library {
 
         let binaryPath = legendaryBinaryPath()
         let runner = LegendaryRunner(legendaryPath: binaryPath)
-
-        let result = try await runner.run(command)
-
+        print("[Library] Importing '\(appName)' from \(installPath) using legendary...")
+        let result = try await runner.run(command, options: RunnerOptions(logOutput: true))
+        print("[Library] Legendary import command completed with exit code \(result.exitCode)")
         if !result.success {
             throw LegendaryError.commandFailed(exitCode: result.exitCode, stderr: result.standardError)
         }
