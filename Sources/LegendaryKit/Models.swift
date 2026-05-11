@@ -254,7 +254,7 @@ public enum Legendary {
         public let manifestPath: String?
         public let needsVerification: Bool
         public let platform: LegendaryInstallPlatform
-        public let prereqInfo: [Prerequisite]?
+        public let prereqInfo: Prerequisite?
         public let requiresOt: Bool
         public let savePath: String?
         public let title: String

@@ -109,7 +109,10 @@ public final class LibraryViewModel {
     public init() {
         self.library = Library(autoRefresh: false)
         print("[LibraryViewModel] init")
-        reloadFromCache()
+        Task {
+            await self.library.initializeCache(autoRefresh: false)
+            self.reloadFromCache()
+        }
     }
 
     public func reloadFromCache() {
@@ -318,7 +321,7 @@ public final class LibraryViewModel {
             isImporting = true
             importError = ""
             do {
-                try await library.importGame(appName: appName, installPath: installPath)
+                try await library.importGame(appName: appName, installPath: installPath, withDlcs: true)
                 reloadFromCache()
 
                 if let game = games.asArray.first(where: { $0.appName == appName }) {

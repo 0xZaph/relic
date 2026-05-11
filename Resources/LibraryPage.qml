@@ -268,12 +268,10 @@ Kirigami.Page {
                 }
             }
 
-            // Launch section — only for installed games
             ColumnLayout {
                 visible: lvm.selectedIsInstalled
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing
-
 
                 // Launch error message
                 Kirigami.InlineMessage {

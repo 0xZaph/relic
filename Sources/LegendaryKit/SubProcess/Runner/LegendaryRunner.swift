@@ -125,18 +125,6 @@ public struct LegendaryRunner: Sendable {
         )
     }
 
-    public func tryRun(
-        _ command: LegendaryCommand,
-        baseOptions: BaseCommandOptions = BaseCommandOptions(),
-        options: RunnerOptions = RunnerOptions()
-    ) async -> CommandResult? {
-        try? await run(command, baseOptions: baseOptions, options: options)
-    }
-
-    public func tryRun(_ command: LegendaryCommand) async -> CommandResult? {
-        try? await run(command)
-    }
-
     // MARK: - Helpers
 
     private func exitCode(from status: TerminationStatus) -> Int32 {

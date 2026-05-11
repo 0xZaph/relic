@@ -14,13 +14,12 @@ public class Library {
     public init(autoRefresh: Bool = true) {
         self.store = try! LegendaryFS()
         self.timeout = 10
+    }
 
-        Task { [weak self] in
-            guard let self else { return }
-            await self.loadCachedLibrary()
-            if autoRefresh {
-                _ = try? await self.refreshLegendary()
-            }
+    public func initializeCache(autoRefresh: Bool = true) async {
+        await self.loadCachedLibrary()
+        if autoRefresh {
+            _ = try? await self.refreshLegendary()
         }
     }
 
@@ -455,6 +454,7 @@ public class Library {
             InfoCommandOptions(appName: appName, platform: legendaryPlatform))
         let binaryPath = legendaryBinaryPath()
 
+        // Run on a background thread so we don't block the main actor
         let runner = LegendaryRunner(legendaryPath: binaryPath)
         let result = try await runner.run(command)
 
@@ -885,6 +885,19 @@ public class Library {
     public func importGame(
         appName: String, installPath: String, platform: String = "Windows", withDlcs: Bool = true
     ) async throws {
+        let path = URL(fileURLWithPath: installPath)
+
+        guard FileManager.default.fileExists(atPath: path.path) else {
+            throw ImportError.pathDoesNotExist(installPath)
+        }
+
+        guard library[appName] != nil else {
+            throw ImportError.gameNotFound(appName)
+        }
+
+        if installedGames[appName] != nil {
+            throw ImportError.alreadyInstalled(library[appName]?.appTitle ?? appName)
+        }
         let legendaryPlatform = LegendaryPlatform(rawValue: platform) ?? .windows
         let command = LegendaryCommand.importGame(
             appName,
@@ -895,12 +908,11 @@ public class Library {
 
         let binaryPath = legendaryBinaryPath()
         let runner = LegendaryRunner(legendaryPath: binaryPath)
-
+        print("[Library] Importing '\(appName)' from \(installPath) using legendary...")
         let result = try await runner.run(command, options: RunnerOptions(logOutput: true))
-
+        print("[Library] Legendary import command completed with exit code \(result.exitCode)")
         if !result.success {
-            throw LegendaryError.commandFailed(
-                exitCode: result.exitCode, stderr: result.standardError)
+            throw LegendaryError.commandFailed(exitCode: result.exitCode, stderr: result.standardError)
         }
 
         await refreshInstalled()
