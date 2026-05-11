@@ -24,6 +24,7 @@ Kirigami.Page {
     // Game detail / import sheet
     Kirigami.OverlaySheet {
         id: gameSheet
+        width: Math.min(libraryPage.width * 0.9, 500)
 
         onVisibleChanged: {
             if (!visible) lvm.clearSelectedGame()
@@ -114,14 +115,14 @@ Kirigami.Page {
         }
 
         ColumnLayout {
-            width: Math.min(libraryPage.width * 0.9, 500)
+            width: parent.width
             spacing: Kirigami.Units.largeSpacing
 
             // Size info row (shown while loading or when data is available)
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.largeSpacing
-                visible: lvm.detailsLoading || lvm.detailsDownloadSize !== "" || lvm.detailsDiskSize !== ""
+                visible: !lvm.selectedIsInstalled && (lvm.detailsLoading || lvm.detailsDownloadSize !== "" || lvm.detailsDiskSize !== "")
 
                 Controls.BusyIndicator {
                     visible: lvm.detailsLoading
@@ -229,12 +230,71 @@ Kirigami.Page {
                 }
             }
 
-            Controls.Label {
+            // Launch section — only for installed games
+            ColumnLayout {
                 visible: lvm.selectedIsInstalled
-                text: qsTr("Launch and uninstall support coming soon.")
-                opacity: 0.6
                 Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
+                spacing: Kirigami.Units.smallSpacing
+
+                // Wine picker (macOS only)
+                ColumnLayout {
+                    visible: lvm.wineInstallationNames !== ""
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Kirigami.Heading {
+                        text: qsTr("Wine / Compatibility Layer")
+                        level: 4
+                    }
+
+                    Controls.ComboBox {
+                        id: winePicker
+                        Layout.fillWidth: true
+                        model: lvm.wineInstallationNames !== ""
+                               ? lvm.wineInstallationNames.split("|||")
+                               : []
+                        currentIndex: lvm.selectedWineIndex
+                        onActivated: lvm.selectWine(currentIndex)
+                    }
+                }
+
+                // Busy indicator while detecting wine
+                RowLayout {
+                    visible: lvm.wineDetecting
+                    spacing: Kirigami.Units.smallSpacing
+                    Controls.BusyIndicator {
+                        running: lvm.wineDetecting
+                        implicitWidth: 20
+                        implicitHeight: 20
+                    }
+                    Controls.Label {
+                        text: qsTr("Detecting Wine installations…")
+                        opacity: 0.7
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+                }
+
+                // Launch error message
+                Kirigami.InlineMessage {
+                    Layout.fillWidth: true
+                    visible: lvm.launchError !== ""
+                    type: Kirigami.MessageType.Error
+                    text: lvm.launchError
+                }
+
+                // Launch button row
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: Kirigami.Units.smallSpacing
+
+                    Controls.Button {
+                        text: lvm.isLaunching ? qsTr("Launching…") : qsTr("Launch")
+                        icon.name: "media-playback-start"
+                        enabled: !lvm.isLaunching
+                        onClicked: lvm.launchGame(lvm.selectedAppName)
+                        Layout.fillWidth: true
+                    }
+                }
             }
         }
     }

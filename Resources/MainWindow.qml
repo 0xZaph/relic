@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import org.kde.kirigami as Kirigami
 
 Kirigami.ApplicationWindow {
@@ -15,6 +16,7 @@ Kirigami.ApplicationWindow {
     required property var viewModel
 
     property int currentPage: 0 // 0: Library, 1: Profile
+
 
     globalDrawer: Kirigami.GlobalDrawer {
         id: drawer

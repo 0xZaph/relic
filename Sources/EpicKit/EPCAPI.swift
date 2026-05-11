@@ -479,6 +479,19 @@ public struct EPCAPIClient: Sendable {
         return records
     }
 
+    public func getExchangeCode() async throws(EPCAPIError) -> String {
+        let url = try url(for: oauthHost, path: "/account/api/oauth/exchange")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+
+        struct ExchangeResponse: Codable {
+            let code: String
+        }
+
+        let response: ExchangeResponse = try await perform(request)
+        return response.code
+    }
+
     public mutating func invalidateSession() async throws(EPCAPIError) {
         guard let token = authData?.accessToken else {
             throw .noTokenProvided

@@ -89,6 +89,23 @@ public final class LibraryViewModel {
     public var importError: String = ""
     public var isImporting: Bool = false
 
+    // Launch / dry-run state
+    public var isLaunching: Bool = false
+    public var launchError: String = ""
+    public var launchOutput: String = ""   // dry-run result shown in UI
+
+    // Wine detection
+    public var wineDetecting: Bool = false
+    /// Comma-separated list of detected wine installation names (for QML display).
+    public var wineInstallationNames: String = ""
+    /// Comma-separated list of detected wine binary paths (parallel to names).
+    public var wineInstallationBins: String = ""
+    /// Index into the detected wine list that is currently selected.
+    public var selectedWineIndex: Int = 0
+
+    // Backing store — not exposed to QML directly
+    private var detectedWineInstallations: [WineInstallation] = []
+
     public init() {
         self.library = Library(autoRefresh: false)
         print("[LibraryViewModel] init")
@@ -144,6 +161,8 @@ public final class LibraryViewModel {
         selectedInstallPath = game.installPath
         selectedPlatforms = game.platforms
         importError = ""
+        launchError = ""
+        launchOutput = ""
         // Clear stale details
         detailsDiskSize = ""
         detailsDownloadSize = ""
@@ -153,6 +172,8 @@ public final class LibraryViewModel {
         hasSelectedGame = true  // set last — QML watches this to open the sheet
         // Kick off details fetch
         loadGameDetails(appName: appName)
+        // Detect wine installations for all games (macOS only)
+        detectWineInstallations()
     }
 
     public func loadGameDetails(appName: String) {
@@ -196,6 +217,101 @@ public final class LibraryViewModel {
         detailsNumFiles = 0
         detailsNumChunks = 0
         importError = ""
+        launchError = ""
+        launchOutput = ""
+        wineInstallationNames = ""
+        wineInstallationBins = ""
+        selectedWineIndex = 0
+        detectedWineInstallations = []
+    }
+
+    // MARK: - Wine Detection
+
+    public func detectWineInstallations() {
+        Task {
+            wineDetecting = true
+            let detector = WineDetector()
+            let installations = await detector.detectAll()
+            detectedWineInstallations = installations
+            wineInstallationNames = installations.map { $0.name }.joined(separator: "|||")
+            wineInstallationBins  = installations.map { $0.bin  }.joined(separator: "|||")
+            selectedWineIndex = 0
+            wineDetecting = false
+            print("[LibraryViewModel] Detected \(installations.count) wine installation(s)")
+            for (i, w) in installations.enumerated() {
+                print("  [\(i)] \(w.name) (\(w.type.rawValue)) → \(w.bin)")
+            }
+        }
+    }
+
+    // MARK: - Game Launch
+
+    /// Resolves all launch parameters, fetches an authentication token, and starts the game process.
+    public func launchGame(appName: String) {
+        Task {
+            isLaunching = true
+            launchError = ""
+            launchOutput = ""
+
+            // Pick the selected wine binary (if any detected)
+            let wineBin: String? = {
+                guard !detectedWineInstallations.isEmpty,
+                      selectedWineIndex < detectedWineInstallations.count
+                else { return nil }
+                return detectedWineInstallations[selectedWineIndex].bin
+            }()
+
+            // CrossOver bottle: if the selected wine is CrossOver, pass its bottle
+            let crossoverApp: String? = {
+                guard !detectedWineInstallations.isEmpty,
+                      selectedWineIndex < detectedWineInstallations.count,
+                      detectedWineInstallations[selectedWineIndex].type == .crossover
+                else { return nil }
+                let bin = detectedWineInstallations[selectedWineIndex].bin
+                return URL(fileURLWithPath: bin)
+                    .deletingLastPathComponent()   // bin/
+                    .deletingLastPathComponent()   // CrossOver/
+                    .deletingLastPathComponent()   // SharedSupport/
+                    .deletingLastPathComponent()   // Contents/
+                    .path
+            }()
+
+            do {
+                print("[LibraryViewModel] Fetching session info for launch...")
+                let session = try await library.getSessionInfo()
+                print("[LibraryViewModel] Fetching exchange code...")
+                let exchangeCode = try await library.getExchangeCode()
+
+                print("[LibraryViewModel] Resolving launch parameters for \(appName)...")
+                let params = try library.getLaunchParameters(
+                    appName: appName,
+                    offline: false,
+                    gameToken: exchangeCode,
+                    accountId: session.accountId,
+                    userName: session.displayName,
+                    wineBin: crossoverApp != nil ? nil : wineBin,
+                    crossoverApp: crossoverApp
+                )
+
+                print("[LibraryViewModel] Spawning game process...")
+                try library.launchGame(params: params)
+                print("[LibraryViewModel] Game launched successfully")
+
+                // Optional: show a message or just close the sheet
+                launchOutput = "Game launched!"
+            } catch {
+                launchError = error.localizedDescription
+                print("[LibraryViewModel] launchGame failed: \(error.localizedDescription)")
+            }
+
+            isLaunching = false
+        }
+    }
+
+    /// Called from QML to change the selected wine installation by index.
+    public func selectWine(index: Int) {
+        guard index >= 0 && index < detectedWineInstallations.count else { return }
+        selectedWineIndex = index
     }
 
     public func importGame(appName: String, installPath: String) {
@@ -205,7 +321,12 @@ public final class LibraryViewModel {
             do {
                 try await library.importGame(appName: appName, installPath: installPath)
                 reloadFromCache()
-                clearSelectedGame()
+
+                if let game = games.asArray.first(where: { $0.appName == appName }) {
+                    game.isInstalled = true
+                }
+
+                selectedIsInstalled = true
                 print("[LibraryViewModel] importGame success: \(appName)")
             } catch {
                 importError = error.localizedDescription

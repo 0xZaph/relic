@@ -38,6 +38,9 @@ target_compile_options(relic PRIVATE
 if(APPLE)
     set_target_properties(relic PROPERTIES
         MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
+        MACOSX_BUNDLE_GUI_IDENTIFIER "xyz.zaph.relic"
+        MACOSX_BUNDLE_BUNDLE_NAME "Relic"
     )
     foreach(qml ${QML_FILES})
         set_source_files_properties(${qml} PROPERTIES
