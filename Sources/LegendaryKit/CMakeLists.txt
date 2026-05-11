@@ -4,6 +4,8 @@ add_library(LegendaryKit STATIC
     Library.swift
     Models.swift
     Paths.swift
+    WineDetector.swift
+    LaunchParameters.swift
     SubProcess/Runner/LegendaryRunner.swift
     SubProcess/Commands/ListCommand.swift
     SubProcess/Commands/BaseTypes.swift

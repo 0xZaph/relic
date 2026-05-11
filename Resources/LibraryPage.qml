@@ -24,6 +24,7 @@ Kirigami.Page {
     // Game detail / import sheet
     Kirigami.OverlaySheet {
         id: gameSheet
+        width: Math.min(libraryPage.width * 0.9, 500)
 
         onVisibleChanged: {
             if (!visible) lvm.clearSelectedGame()
@@ -114,7 +115,7 @@ Kirigami.Page {
         }
 
         ColumnLayout {
-            width: Math.min(libraryPage.width * 0.9, 500)
+            width: parent.width
             spacing: Kirigami.Units.largeSpacing
 
             // Size info row (shown while loading or when data is available)
@@ -177,6 +178,44 @@ Kirigami.Page {
                 }
             }
 
+            // Wine picker (macOS only, for Windows games)
+            ColumnLayout {
+                visible: lvm.wineInstallationNames !== "" && lvm.selectedPlatforms.indexOf("Windows") !== -1
+                Layout.fillWidth: true
+                spacing: Kirigami.Units.smallSpacing
+
+                Kirigami.Heading {
+                    text: qsTr("Wine / Compatibility Layer")
+                    level: 4
+                }
+
+                Controls.ComboBox {
+                    id: winePicker
+                    Layout.fillWidth: true
+                    model: lvm.wineInstallationNames !== ""
+                           ? lvm.wineInstallationNames.split("|||")
+                           : []
+                    currentIndex: lvm.selectedWineIndex
+                    onActivated: lvm.selectWine(currentIndex)
+                }
+            }
+
+            // Busy indicator while detecting wine
+            RowLayout {
+                visible: lvm.wineDetecting && lvm.selectedPlatforms.indexOf("Windows") !== -1
+                spacing: Kirigami.Units.smallSpacing
+                Controls.BusyIndicator {
+                    running: lvm.wineDetecting
+                    implicitWidth: 20
+                    implicitHeight: 20
+                }
+                Controls.Label {
+                    text: qsTr("Detecting Wine installations…")
+                    opacity: 0.7
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+            }
+
             // Import section — only for uninstalled games
             ColumnLayout {
                 visible: !lvm.selectedIsInstalled
@@ -234,18 +273,26 @@ Kirigami.Page {
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing
 
-                Controls.Button {
-                    text: qsTr("Run Game")
-                    icon.name: "media-playback-start"
-                    Layout.alignment: Qt.AlignRight
-                    
+                // Launch error message
+                Kirigami.InlineMessage {
+                    Layout.fillWidth: true
+                    visible: lvm.launchError !== ""
+                    type: Kirigami.MessageType.Error
+                    text: lvm.launchError
                 }
 
-                Controls.Label {
-                    text: qsTr("Uninstall")
-                    opacity: 0.6
+                // Launch button row
+                RowLayout {
                     Layout.fillWidth: true
-                    horizontalAlignment: Qt.AlignRight
+                    Layout.topMargin: Kirigami.Units.smallSpacing
+
+                    Controls.Button {
+                        text: lvm.isLaunching ? qsTr("Launching…") : qsTr("Launch")
+                        icon.name: "media-playback-start"
+                        enabled: !lvm.isLaunching
+                        onClicked: lvm.launchGame(lvm.selectedAppName)
+                        Layout.fillWidth: true
+                    }
                 }
             }
         }
@@ -315,7 +362,7 @@ Kirigami.Page {
 
         cellWidth: cardWidth + cardSpacing
         cellHeight: cardHeight + cardSpacing + 28  // 28px for title below card
-        cacheBuffer: height
+        cacheBuffer: cellHeight * 2
 
         model: lvm.games
         visible: !lvm.isRefreshing
@@ -362,9 +409,14 @@ Kirigami.Page {
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         smooth: true
-                        sourceSize.width: gamesGrid.cardWidth * 2
-                        sourceSize.height: gamesGrid.cardHeight * 2
+                        cache: false // Force eviction from RAM since we have disk cache
+                        sourceSize.width: gamesGrid.cardWidth * 1.25
+                        sourceSize.height: gamesGrid.cardHeight * 1.25
                         visible: false
+                        opacity: status === Image.Ready ? 1.0 : 0.0
+                        Behavior on opacity {
+                            NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+                        }
                     }
 
                     // Rounded mask for MultiEffect
@@ -384,11 +436,16 @@ Kirigami.Page {
                     MultiEffect {
                         anchors.fill: parent
                         source: coverImage
-                        visible: coverImage.status === Image.Ready
+                        visible: coverImage.opacity > 0
+                        opacity: coverImage.opacity
                         colorization: (isInstalled || cardHover.containsMouse) ? 0.0 : 0.85
                         colorizationColor: "#808080"
                         maskEnabled: true
                         maskSource: roundedMask
+
+                        Behavior on colorization {
+                            NumberAnimation { duration: 200 }
+                        }
                     }
 
                     // Placeholder while loading or no URL
@@ -396,7 +453,7 @@ Kirigami.Page {
                         anchors.fill: parent
                         radius: 12
                         color: "#2a2a2a"
-                        visible: coverImage.status !== Image.Ready
+                        visible: coverImage.opacity < 1.0
 
                         Kirigami.Icon {
                             anchors.centerIn: parent

@@ -1,5 +1,5 @@
-import Foundation
 import EpicKit
+import Foundation
 
 public class Library {
     private let store: LegendaryFS
@@ -37,6 +37,19 @@ public class Library {
         return EpicClient(timeout: timeout, authData: savedSession)
     }
 
+    public func getExchangeCode() async throws -> String {
+        var client = try await cachedClient()
+        return try await client.getExchangeCode()
+    }
+
+    public func getSessionInfo() async throws -> (accountId: String, displayName: String) {
+        let client = try await cachedClient()
+        guard let auth = client.authData else {
+            throw EPCAPIError.noTokenProvided
+        }
+        return (auth.accountId ?? "", auth.displayName ?? "")
+    }
+
     private static var assetPlatforms: [String] {
         #if os(macOS)
             return ["Windows", "Mac"]
@@ -59,10 +72,10 @@ public class Library {
 
         // Fetch from API
         let assets = try await client.getGameAssets(platform: platform)
-        
+
         // Cache the result
         assetCache[platform] = assets
-        
+
         return assets
     }
 
@@ -87,26 +100,31 @@ public class Library {
         )
 
         let decoder = gameInfoDecoder()
-        
+
         // Try multiple response formats
         // First, try as a dictionary with items key
-        if let dict = try? decoder.decode([String: [String: Legendary.GameMetadataInner]].self, from: responseData),
-           let items = dict["items"],
-           let metadata = items[catalogItemId] {
+        if let dict = try? decoder.decode(
+            [String: [String: Legendary.GameMetadataInner]].self, from: responseData),
+            let items = dict["items"],
+            let metadata = items[catalogItemId]
+        {
             return metadata
         }
-        
+
         // Try as direct items dictionary
-        if let dict = try? decoder.decode([String: Legendary.GameMetadataInner].self, from: responseData),
-           let metadata = dict[catalogItemId] {
+        if let dict = try? decoder.decode(
+            [String: Legendary.GameMetadataInner].self, from: responseData),
+            let metadata = dict[catalogItemId]
+        {
             return metadata
         }
-        
+
         // Try as a single metadata object (for non-DLC items)
-        if let metadata = try? decoder.decode(Legendary.GameMetadataInner.self, from: responseData) {
+        if let metadata = try? decoder.decode(Legendary.GameMetadataInner.self, from: responseData)
+        {
             return metadata
         }
-        
+
         print("[Library] Could not decode game info for \(appName)")
         return nil
     }
@@ -125,19 +143,22 @@ public class Library {
             return nil
         }
 
-        guard let metadata = try await loadCatalogGameInfo(
-            client: client,
-            namespace: selectedAsset.asset.namespace,
-            catalogItemId: selectedAsset.asset.catalogItemId,
-            appName: appName,
-            platform: selectedAsset.platform
-        ) else {
+        guard
+            let metadata = try await loadCatalogGameInfo(
+                client: client,
+                namespace: selectedAsset.asset.namespace,
+                catalogItemId: selectedAsset.asset.catalogItemId,
+                appName: appName,
+                platform: selectedAsset.platform
+            )
+        else {
             return nil
         }
 
         let title = metadata.title ?? appName
 
-        let assetInfos = assetsByPlatform.reduce(into: [String: Legendary.AssetInfo]()) { partialResult, entry in
+        let assetInfos = assetsByPlatform.reduce(into: [String: Legendary.AssetInfo]()) {
+            partialResult, entry in
             let (platform, asset) = entry
             partialResult[platform] = Legendary.AssetInfo(
                 appName: asset.appName,
@@ -168,7 +189,8 @@ public class Library {
         // Fetch assets for each platform with caching
         for platform in Self.assetPlatforms {
             do {
-                let assets = try await getAssets(platform: platform, updateAssets: true, client: client)
+                let assets = try await getAssets(
+                    platform: platform, updateAssets: true, client: client)
                 for asset in assets {
                     assetMap[asset.appName, default: [:]][platform] = asset
                     fetchedAppNames.insert(asset.appName)
@@ -207,17 +229,21 @@ public class Library {
         await withTaskGroup(of: Void.self) { group in
             for appName in appNamesToRefresh {
                 if let assetsByPlatform = assetMap[appName],
-                   assetsByPlatform.values.contains(where: { $0.namespace.lowercased() == "ue" }) {
+                    assetsByPlatform.values.contains(where: { $0.namespace.lowercased() == "ue" })
+                {
                     continue
                 }
                 group.addTask {
                     if let assetsByPlatform = assetMap[appName] {
                         do {
-                            if let game = try await self.buildGameMetadata(appName: appName, assetsByPlatform: assetsByPlatform, client: client) {
+                            if let game = try await self.buildGameMetadata(
+                                appName: appName, assetsByPlatform: assetsByPlatform, client: client
+                            ) {
                                 try await self.store.saveGameMetadata(game)
                             }
                         } catch {
-                            print("[Library] Failed to build/save metadata for \(appName): \(error)")
+                            print(
+                                "[Library] Failed to build/save metadata for \(appName): \(error)")
                         }
                         return
                     }
@@ -227,13 +253,15 @@ public class Library {
                     }
 
                     do {
-                        guard let metadata = try await self.loadCatalogGameInfo(
-                            client: client,
-                            namespace: item.namespace,
-                            catalogItemId: item.catalogItemId,
-                            appName: appName,
-                            platform: "Windows"
-                        ) else {
+                        guard
+                            let metadata = try await self.loadCatalogGameInfo(
+                                client: client,
+                                namespace: item.namespace,
+                                catalogItemId: item.catalogItemId,
+                                appName: appName,
+                                platform: "Windows"
+                            )
+                        else {
                             return
                         }
                         let title = metadata.title ?? appName
@@ -291,7 +319,8 @@ public class Library {
 
     // MARK: - Load a single game’s metadata
     public func loadFile(_ appName: String) -> Bool {
-        let filePath = URL(fileURLWithPath: legendaryMetadata()).appendingPathComponent("\(appName).json")
+        let filePath = URL(fileURLWithPath: legendaryMetadata()).appendingPathComponent(
+            "\(appName).json")
         guard let data = try? Data(contentsOf: filePath) else { return false }
         guard let meta = try? JSONDecoder().decode(Legendary.GameMetadata.self, from: data) else {
             return false
@@ -338,8 +367,8 @@ public class Library {
             let keyImages = meta.metadata.keyImages ?? []
             let artCover = keyImages.first(where: { $0.type == "DieselGameBox" })?.url
             let artSquare =
-                keyImages.first(where: { $0.type == "DieselGameBoxTall" })?.url ??
-                keyImages.first(where: { $0.type == "DieselStoreFrontTall" })?.url
+                keyImages.first(where: { $0.type == "DieselGameBoxTall" })?.url
+                ?? keyImages.first(where: { $0.type == "DieselStoreFrontTall" })?.url
             let artLogo = keyImages.first(where: { $0.type == "DieselGameBoxLogo" })?.url
             let description = meta.metadata.description
             let isInstalled = installedGames[appName] != nil
@@ -378,8 +407,8 @@ public class Library {
         let keyImages = meta.metadata.keyImages ?? []
         let artCover = keyImages.first(where: { $0.type == "DieselGameBox" })?.url
         let artSquare =
-            keyImages.first(where: { $0.type == "DieselGameBoxTall" })?.url ??
-            keyImages.first(where: { $0.type == "DieselStoreFrontTall" })?.url
+            keyImages.first(where: { $0.type == "DieselGameBoxTall" })?.url
+            ?? keyImages.first(where: { $0.type == "DieselStoreFrontTall" })?.url
         let artLogo = keyImages.first(where: { $0.type == "DieselGameBoxLogo" })?.url
         let description = meta.metadata.description
         return GameInfo(
@@ -413,16 +442,18 @@ public class Library {
 
     /// Fetches manifest info for a game using `legendary info --json`.
     /// Returns disk size, download size, build version, launch exe, file/chunk counts.
-    public func getGameDetails(appName: String, platform: String = "Windows") async throws -> GameDetails {
+    public func getGameDetails(appName: String, platform: String = "Windows") async throws
+        -> GameDetails
+    {
         guard library[appName] != nil else {
             throw ImportError.gameNotFound(appName)
         }
 
         let legendaryPlatform = LegendaryPlatform(rawValue: platform) ?? .windows
-        let command = LegendaryCommand.info(InfoCommandOptions(appName: appName, platform: legendaryPlatform))
+        let command = LegendaryCommand.info(
+            InfoCommandOptions(appName: appName, platform: legendaryPlatform))
         let binaryPath = legendaryBinaryPath()
 
-        // Run on a background thread so we don't block the main actor
         let runner = LegendaryRunner(legendaryPath: binaryPath)
         let result = try await runner.run(command)
 
@@ -452,6 +483,382 @@ public class Library {
         )
     }
 
+    // MARK: - Launch Parameter Resolution
+
+    /// Builds environment variable overrides for launching a game.
+    /// Mirrors `get_app_environment` from legendary's core.py.
+    ///
+    /// - On macOS, CrossOver bottle and WINEPREFIX are resolved in priority order:
+    ///   explicit param → existing env var → legendary config → sensible default.
+    public func getAppEnvironment(
+        appName: String,
+        winePfx: String? = nil,
+        cxBottle: String? = nil,
+        disableWine: Bool = false
+    ) -> [String: String] {
+        var env: [String: String] = [:]
+
+        // Merge default.env and <appName>.env from legendary config (best-effort)
+        let configPath = legendaryConfigPath()
+        let configURL = URL(fileURLWithPath: configPath).appendingPathComponent("config.ini")
+        if let configContents = try? String(contentsOf: configURL, encoding: .utf8) {
+            env.merge(parseIniEnvSection(configContents, section: "default.env")) { _, new in new }
+            env.merge(parseIniEnvSection(configContents, section: "\(appName).env")) { _, new in new
+            }
+        }
+
+        guard !disableWine else { return env }
+
+        #if os(macOS)
+            // CrossOver bottle resolution: param → env → config → "Legendary"
+            if let bottle = cxBottle, !bottle.isEmpty {
+                env["CX_BOTTLE"] = bottle
+            } else if ProcessInfo.processInfo.environment["CX_BOTTLE"] == nil {
+                // Not already set in the process environment — use config or default
+                let bottle =
+                    readLegendaryConfig(appName: appName, key: "crossover_bottle")
+                    ?? readLegendaryConfig(appName: "default", key: "crossover_bottle")
+                    ?? "Legendary"
+                env["CX_BOTTLE"] = bottle
+            }
+        #endif
+
+        // WINEPREFIX resolution: param → env → config
+        if let pfx = winePfx, !pfx.isEmpty {
+            env["WINEPREFIX"] = pfx
+        } else if ProcessInfo.processInfo.environment["WINEPREFIX"] == nil {
+            if let pfx = readLegendaryConfig(appName: appName, key: "wine_prefix") {
+                env["WINEPREFIX"] = pfx
+            }
+        }
+
+        return env
+    }
+
+    /// Builds the launch command prefix: [wrapper?, wine_binary].
+    /// Mirrors `get_app_launch_command` from legendary's core.py.
+    ///
+    /// On macOS, CrossOver is preferred. Falls back to config wine_executable → "wine".
+    public func getAppLaunchCommand(
+        appName: String,
+        wrapper: String? = nil,
+        wineBinary: String? = nil,
+        crossoverApp: String? = nil,
+        disableWine: Bool = false
+    ) -> [String] {
+        var cmd: [String] = []
+
+        // Wrapper (e.g. gamescope, mangohud)
+        let resolvedWrapper =
+            wrapper
+            ?? readLegendaryConfig(appName: appName, key: "wrapper")
+            ?? readLegendaryConfig(appName: "default", key: "wrapper")
+        if let w = resolvedWrapper, !w.isEmpty {
+            cmd += w.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        }
+
+        #if os(Windows)
+            // No wine needed on Windows
+            return cmd
+        #else
+            guard !disableWine else { return cmd }
+
+            #if os(macOS)
+                // Resolve CrossOver app: param → config → auto-detect
+                var resolvedCXApp =
+                    crossoverApp
+                    ?? readLegendaryConfig(appName: appName, key: "crossover_app")
+                    ?? readLegendaryConfig(appName: "default", key: "crossover_app")
+
+                if resolvedCXApp == nil && wineBinary == nil {
+                    // Auto-detect CrossOver unless disabled in config
+                    let disableAutoCX =
+                        readLegendaryConfig(appName: "Legendary", key: "disable_auto_crossover")
+                        .map { $0.lowercased() == "true" } ?? false
+                    if !disableAutoCX {
+                        resolvedCXApp = findCrossoverApp()
+                    }
+                }
+
+                if let cxApp = resolvedCXApp, !cxApp.isEmpty {
+                    let cxWine = URL(fileURLWithPath: cxApp)
+                        .appendingPathComponent("Contents/SharedSupport/CrossOver/bin/wine").path
+                    if FileManager.default.fileExists(atPath: cxWine) {
+                        cmd.append(cxWine)
+                        return cmd
+                    }
+                    print(
+                        "[Library] CrossOver app specified but wine binary not found at: \(cxWine)")
+                }
+            #endif
+
+            // Explicit wine binary or config override
+            let wine =
+                wineBinary
+                ?? readLegendaryConfig(appName: appName, key: "wine_executable")
+                ?? readLegendaryConfig(appName: "default", key: "wine_executable")
+                ?? "wine"
+            cmd.append(wine)
+            return cmd
+        #endif
+    }
+
+    /// Returns the pre-launch command and whether to wait for it.
+    /// Mirrors `get_pre_launch_command` from legendary's core.py.
+    public func getPreLaunchCommand(appName: String) -> (command: String?, wait: Bool) {
+        if let cmd = readLegendaryConfig(appName: appName, key: "pre_launch_command"), !cmd.isEmpty
+        {
+            let wait =
+                readLegendaryConfig(appName: appName, key: "pre_launch_wait")
+                .map { $0.lowercased() == "true" } ?? false
+            return (cmd, wait)
+        }
+        let cmd = readLegendaryConfig(appName: "default", key: "pre_launch_command")
+        let wait =
+            readLegendaryConfig(appName: "default", key: "pre_launch_wait")
+            .map { $0.lowercased() == "true" } ?? false
+        return (cmd, wait)
+    }
+
+    /// Resolves all launch parameters for a game.
+    /// Mirrors `get_launch_parameters` from legendary's core.py.
+    ///
+    /// - Parameters:
+    ///   - appName: The Epic app name.
+    ///   - offline: Skip auth token fetch (game must support offline).
+    ///   - gameToken: Pre-fetched auth token (pass "" for offline/dry-run).
+    ///   - accountId: Epic account ID.
+    ///   - userName: Epic display name.
+    ///   - language: Locale override (e.g. "en").
+    ///   - extraArgs: Additional user-supplied arguments.
+    ///   - wineBin: Explicit wine binary path override.
+    ///   - winePfx: Explicit WINEPREFIX override.
+    ///   - wrapper: Wrapper command override.
+    ///   - disableWine: Skip wine entirely (native executables).
+    ///   - executableOverride: Override the game executable path.
+    ///   - crossoverApp: Explicit CrossOver .app path.
+    ///   - crossoverBottle: Explicit CrossOver bottle name.
+    public func getLaunchParameters(
+        appName: String,
+        offline: Bool = false,
+        gameToken: String = "",
+        accountId: String = "",
+        userName: String = "",
+        language: String? = nil,
+        extraArgs: [String] = [],
+        wineBin: String? = nil,
+        winePfx: String? = nil,
+        wrapper: String? = nil,
+        disableWine: Bool = false,
+        executableOverride: String? = nil,
+        crossoverApp: String? = nil,
+        crossoverBottle: String? = nil
+    ) throws -> LaunchParameters {
+        guard let install = installedGames[appName] else {
+            throw LaunchError.gameNotInstalled(appName)
+        }
+        guard library[appName] != nil else {
+            throw LaunchError.gameNotFound(appName)
+        }
+        let game = library[appName]!
+
+        // Disable wine for non-Windows platforms (e.g. native macOS builds)
+        var resolvedDisableWine = disableWine
+        if !install.platform.rawValue.hasPrefix("Win") {
+            resolvedDisableWine = true
+        }
+        // Also check config no_wine flag
+        if let noWine = readLegendaryConfig(appName: appName, key: "no_wine")
+            ?? readLegendaryConfig(appName: "default", key: "no_wine"),
+            noWine.lowercased() == "true"
+        {
+            resolvedDisableWine = true
+        }
+
+        // Resolve executable
+        let resolvedExeOverride =
+            executableOverride
+            ?? readLegendaryConfig(appName: appName, key: "override_exe")
+        let gameExe: String
+        if let override = resolvedExeOverride, !override.isEmpty {
+            gameExe = override.replacingOccurrences(of: "\\", with: "/")
+            let exePath = (install.installPath as NSString).appendingPathComponent(gameExe)
+            guard FileManager.default.fileExists(atPath: exePath) else {
+                throw LaunchError.invalidExecutablePath(exePath)
+            }
+        } else {
+            gameExe = install.executable
+                .replacingOccurrences(of: "\\", with: "/")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        }
+
+        let exePath = (install.installPath as NSString).appendingPathComponent(gameExe)
+        let workingDir = (exePath as NSString).deletingLastPathComponent
+
+        var params = LaunchParameters(
+            gameExecutable: gameExe,
+            gameDirectory: install.installPath,
+            workingDirectory: workingDir,
+            launchCommand: getAppLaunchCommand(
+                appName: appName,
+                wrapper: wrapper,
+                wineBinary: wineBin,
+                crossoverApp: crossoverApp,
+                disableWine: resolvedDisableWine
+            ),
+            environment: getAppEnvironment(
+                appName: appName,
+                winePfx: winePfx,
+                cxBottle: crossoverBottle,
+                disableWine: resolvedDisableWine
+            )
+        )
+
+        // Pre-launch command
+        let (preCmd, preWait) = getPreLaunchCommand(appName: appName)
+        params.preLaunchCommand = preCmd
+        params.preLaunchWait = preWait
+
+        // Game parameters from install metadata
+        if !install.launchParameters.isEmpty {
+            let parts = install.launchParameters
+                .components(separatedBy: .whitespaces)
+                .filter { !$0.isEmpty }
+            params.gameParameters.append(contentsOf: parts)
+        }
+
+        // Additional command line from game metadata
+        if let metaArgs = game.metadata.technicalDetails, !metaArgs.isEmpty {
+            let parts = metaArgs.trimmingCharacters(in: .whitespaces)
+                .components(separatedBy: .whitespaces)
+                .filter { !$0.isEmpty }
+            params.gameParameters.append(contentsOf: parts)
+        }
+
+        // EGL authentication parameters
+        params.eglParameters = [
+            "-AUTH_LOGIN=unused",
+            "-AUTH_PASSWORD=\(gameToken)",
+            "-AUTH_TYPE=exchangecode",
+            "-epicapp=\(appName)",
+            "-epicenv=Prod",
+        ]
+
+        // Locale
+        let languageCode =
+            language
+            ?? readLegendaryConfig(appName: appName, key: "language")
+            ?? Locale.current.language.languageCode?.identifier
+            ?? "en"
+
+        params.eglParameters += [
+            "-EpicPortal",
+            "-epicusername=\(userName)",
+            "-epicuserid=\(accountId)",
+            "-epiclocale=\(languageCode)",
+            "-epicsandboxid=\(game.metadata.namespace ?? "")",
+        ]
+
+        // User extra args
+        if !extraArgs.isEmpty {
+            params.userParameters.append(contentsOf: extraArgs)
+        }
+        if let configArgs = readLegendaryConfig(appName: appName, key: "start_params"),
+            !configArgs.isEmpty
+        {
+            let parts = configArgs.trimmingCharacters(in: .whitespaces)
+                .components(separatedBy: .whitespaces)
+                .filter { !$0.isEmpty }
+            params.userParameters.append(contentsOf: parts)
+        }
+
+        return params
+    }
+
+    // MARK: - Config helpers
+
+    /// Reads a single key from the legendary INI config for a given section.
+    /// Returns nil if the config file or key is absent.
+    private func readLegendaryConfig(appName: String, key: String) -> String? {
+        let configURL = URL(fileURLWithPath: legendaryConfigPath())
+            .appendingPathComponent("config.ini")
+        guard let contents = try? String(contentsOf: configURL, encoding: .utf8) else {
+            return nil
+        }
+        return parseIniValue(contents, section: appName, key: key)
+    }
+
+    /// Minimal INI parser: finds `[section]` then returns the value for `key = value`.
+    private func parseIniValue(_ ini: String, section: String, key: String) -> String? {
+        var inSection = false
+        for line in ini.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                let name = String(trimmed.dropFirst().dropLast())
+                inSection = name.lowercased() == section.lowercased()
+                continue
+            }
+            guard inSection else { continue }
+            guard !trimmed.hasPrefix(";"), !trimmed.hasPrefix("#") else { continue }
+            let parts = trimmed.components(separatedBy: "=")
+            guard parts.count >= 2 else { continue }
+            let k = parts[0].trimmingCharacters(in: .whitespaces)
+            if k.lowercased() == key.lowercased() {
+                return parts[1...].joined(separator: "=")
+                    .trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
+    }
+
+    /// Parses a `[section]` block from an INI file into a `[String: String]` dict,
+    /// skipping comment lines (starting with `;`).
+    private func parseIniEnvSection(_ ini: String, section: String) -> [String: String] {
+        var result: [String: String] = [:]
+        var inSection = false
+        for line in ini.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("[") && trimmed.hasSuffix("]") {
+                let name = String(trimmed.dropFirst().dropLast())
+                inSection = name.lowercased() == section.lowercased()
+                continue
+            }
+            guard inSection else { continue }
+            guard !trimmed.hasPrefix(";"), !trimmed.hasPrefix("#"), !trimmed.isEmpty else {
+                continue
+            }
+            let parts = trimmed.components(separatedBy: "=")
+            guard parts.count >= 2 else { continue }
+            let k = parts[0].trimmingCharacters(in: .whitespaces)
+            let v = parts[1...].joined(separator: "=").trimmingCharacters(in: .whitespaces)
+            if !k.isEmpty && !v.isEmpty {
+                result[k] = v
+            }
+        }
+        return result
+    }
+
+    /// Uses `mdfind` to locate CrossOver on macOS. Returns the first result or nil.
+    private func findCrossoverApp() -> String? {
+        #if os(macOS)
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
+            task.arguments = ["kMDItemCFBundleIdentifier = \"com.codeweavers.CrossOver\""]
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = Pipe()
+            guard (try? task.run()) != nil else { return nil }
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            return output.components(separatedBy: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .first(where: { !$0.isEmpty })
+        #else
+            return nil
+        #endif
+    }
+
     public enum ImportError: Error, LocalizedError {
         case gameNotFound(String)
         case pathDoesNotExist(String)
@@ -459,18 +866,25 @@ public class Library {
 
         public var errorDescription: String? {
             switch self {
-            case .gameNotFound(let name):   return "Game '\(name)' not found in your library."
-            case .pathDoesNotExist(let p):  return "Path does not exist: \(p)"
-            case .alreadyInstalled(let n):  return "'\(n)' is already registered as installed."
+            case .gameNotFound(let name): return "Game '\(name)' not found in your library."
+            case .pathDoesNotExist(let p): return "Path does not exist: \(p)"
+            case .alreadyInstalled(let n): return "'\(n)' is already registered as installed."
             }
         }
     }
 
     /// Import an already-installed game by pointing at its install directory.
-    public func importGame(appName: String, installPath: String, platform: String = "Windows", withDlcs: Bool = true) async throws {
-        let path = URL(fileURLWithPath: installPath)
-
-        guard FileManager.default.fileExists(atPath: path.path) else {
+    ///
+    /// Mirrors legendary's `import_game` logic:
+    /// - If `.egstore/<appName>.mancpn` exists and there is no `.egstore/bps` in-progress marker,
+    ///   the install is assumed complete and `needsVerification` is set to `false`.
+    /// - Otherwise `needsVerification = true` so the user knows a repair pass is needed.
+    /// - Manifest fields (version, executable, launch params) are read from `.egstore` when
+    ///   available; otherwise sensible defaults are used.
+    public func importGame(
+        appName: String, installPath: String, platform: String = "Windows", withDlcs: Bool = true
+    ) async throws {
+        guard FileManager.default.fileExists(atPath: installPath) else {
             throw ImportError.pathDoesNotExist(installPath)
         }
 
@@ -479,9 +893,8 @@ public class Library {
         }
 
         if installedGames[appName] != nil {
-            throw ImportError.alreadyInstalled(library[appName]?.appTitle ?? appName)
+            throw ImportError.alreadyInstalled(appName)
         }
-
         let legendaryPlatform = LegendaryPlatform(rawValue: platform) ?? .windows
         let command = LegendaryCommand.importGame(
             appName,
@@ -502,5 +915,34 @@ public class Library {
         await refreshInstalled()
 
         print("[Library] Imported '\(appName)' from \(installPath)")
+    }
+
+    /// Launches a game using the provided parameters.
+    /// Spawns a background process and returns immediately.
+    public func launchGame(params: LaunchParameters) throws {
+        let process = Process()
+        let command = params.fullCommandLine
+        guard !command.isEmpty else {
+            throw LaunchError.invalidExecutablePath("Empty command line")
+        }
+
+        process.executableURL = URL(fileURLWithPath: command[0])
+        process.arguments = Array(command.dropFirst())
+        process.currentDirectoryURL = URL(fileURLWithPath: params.workingDirectory)
+
+        var environment = ProcessInfo.processInfo.environment
+        for (key, value) in params.environment {
+            environment[key] = value
+        }
+        process.environment = environment
+
+        // Redirect output to null or a log file to avoid filling up pipes if not read
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        print("[Library] Launching: \(command.joined(separator: " "))")
+        print("[Library] In directory: \(params.workingDirectory)")
+
+        try process.run()
     }
 }

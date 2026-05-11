@@ -28,6 +28,10 @@ public struct EpicClient: Sendable {
         try await api.invalidateSession()
     }
 
+    public func getExchangeCode() async throws(EPCAPIError) -> String {
+        try await api.getExchangeCode()
+    }
+
     public mutating func restoreSession(_ authData: OAuthResponse?) {
         api = EPCAPIClient(timeout: timeout)
         api.authData = authData

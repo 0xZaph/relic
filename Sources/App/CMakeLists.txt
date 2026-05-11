@@ -38,12 +38,22 @@ target_compile_options(relic PRIVATE
 if(APPLE)
     set_target_properties(relic PROPERTIES
         MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
+        MACOSX_BUNDLE_GUI_IDENTIFIER "xyz.zaph.relic"
+        MACOSX_BUNDLE_BUNDLE_NAME "Relic"
     )
     foreach(qml ${QML_FILES})
         set_source_files_properties(${qml} PROPERTIES
             MACOSX_PACKAGE_LOCATION Resources
         )
     endforeach()
+
+    # Bundle icons directory
+    file(GLOB ICON_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/icons/*.svg")
+    set_source_files_properties(${ICON_FILES} PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources/icons
+    )
+    target_sources(relic PRIVATE ${ICON_FILES})
 else()
     foreach(qml ${QML_FILES})
         add_custom_command(

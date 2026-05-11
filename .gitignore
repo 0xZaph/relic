@@ -54,6 +54,7 @@ Sources/App/.qmlls.ini
 .clangd/
 compile_commands.json
 .qmlls.ini
+.kiro/
 
 # JetBrains CLion
 .idea/
