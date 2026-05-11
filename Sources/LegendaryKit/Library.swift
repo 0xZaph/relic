@@ -454,7 +454,6 @@ public class Library {
             InfoCommandOptions(appName: appName, platform: legendaryPlatform))
         let binaryPath = legendaryBinaryPath()
 
-        // Run on a background thread so we don't block the main actor
         let runner = LegendaryRunner(legendaryPath: binaryPath)
         let result = try await runner.run(command)
 
@@ -885,18 +884,16 @@ public class Library {
     public func importGame(
         appName: String, installPath: String, platform: String = "Windows", withDlcs: Bool = true
     ) async throws {
-        let path = URL(fileURLWithPath: installPath)
-
-        guard FileManager.default.fileExists(atPath: path.path) else {
+        guard FileManager.default.fileExists(atPath: installPath) else {
             throw ImportError.pathDoesNotExist(installPath)
         }
 
-        guard library[appName] != nil else {
+        guard let app = library[appName] else {
             throw ImportError.gameNotFound(appName)
         }
 
         if installedGames[appName] != nil {
-            throw ImportError.alreadyInstalled(library[appName]?.appTitle ?? appName)
+            throw ImportError.alreadyInstalled(app.appTitle)
         }
         let legendaryPlatform = LegendaryPlatform(rawValue: platform) ?? .windows
         let command = LegendaryCommand.importGame(
