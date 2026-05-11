@@ -1,6 +1,6 @@
 // MARK: - Auth Command Options
 
-public struct AuthCommandOptions {
+public struct AuthCommandOptions: Sendable {
     public var `import`: Bool
     public var code: String?
     public var token: String?

@@ -1,6 +1,6 @@
 // MARK: - Import Command Options
 
-public struct ImportCommandOptions {
+public struct ImportCommandOptions: Sendable {
     public let appName: String
     public let installationDirectory: String
     public var disableCheck: Bool

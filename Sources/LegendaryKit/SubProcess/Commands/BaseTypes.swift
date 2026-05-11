@@ -1,6 +1,6 @@
 // MARK: - Platform Enum
 
-public enum LegendaryPlatform: String {
+public enum LegendaryPlatform: String, Sendable {
     case windows = "Windows"
     case win32 = "Win32"
     case mac = "Mac"
@@ -9,7 +9,7 @@ public enum LegendaryPlatform: String {
 
 // MARK: - Base Command Options
 
-public struct BaseCommandOptions {
+public struct BaseCommandOptions: Sendable {
     public var verbose: Bool
     public var debug: Bool
     public var yes: Bool

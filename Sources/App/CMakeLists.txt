@@ -1,6 +1,22 @@
+
+# QML resources to bundle
+set(QML_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/MainWindow.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/ProfilePage.qml
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/LibraryPage.qml
+)
+
+set(RESOURCE_FILES
+    ${QML_FILES}
+    "Resources/icons/epic-games-logo.svg"
+)
+
 add_executable(relic
     App.swift
     AppViewModel.swift
+    UserViewModel.swift
+    LibraryViewModel.swift
+    ${QML_FILES}
 )
 
 target_link_libraries(relic
@@ -9,6 +25,8 @@ target_link_libraries(relic
         KirigamiSupport
         EpicKit
         LegendaryKit
+        Subprocess
+        SystemPackage
 )
 
 target_compile_options(relic PRIVATE 
@@ -16,24 +34,36 @@ target_compile_options(relic PRIVATE
     "$<$<COMPILE_LANGUAGE:Swift>:-parse-as-library>"
 )
 
-set(MAIN_QML_FILE "${CMAKE_SOURCE_DIR}/Resources/main.qml")
 
 if(APPLE)
     set_target_properties(relic PROPERTIES
         MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
+        MACOSX_BUNDLE_GUI_IDENTIFIER "xyz.zaph.relic"
+        MACOSX_BUNDLE_BUNDLE_NAME "Relic"
     )
-    target_sources(relic PRIVATE "${MAIN_QML_FILE}")
-    set_source_files_properties("${MAIN_QML_FILE}" PROPERTIES
-        MACOSX_PACKAGE_LOCATION Resources
+    foreach(qml ${QML_FILES})
+        set_source_files_properties(${qml} PROPERTIES
+            MACOSX_PACKAGE_LOCATION Resources
+        )
+    endforeach()
+
+    # Bundle icons directory
+    file(GLOB ICON_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/icons/*.svg")
+    set_source_files_properties(${ICON_FILES} PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources/icons
     )
+    target_sources(relic PRIVATE ${ICON_FILES})
 else()
-    add_custom_command(
-        TARGET relic POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-            "${MAIN_QML_FILE}"
-            "$<TARGET_FILE_DIR:relic>/main.qml"
-        COMMENT "Copying QML file next to executable"
-    )
+    foreach(qml ${QML_FILES})
+        add_custom_command(
+            TARGET relic POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "${qml}"
+                "$<TARGET_FILE_DIR:relic>/"
+            COMMENT "Copying QML file next to executable"
+        )
+    endforeach()
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     # macOS: Install inside the .app bundle

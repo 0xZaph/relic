@@ -1,8 +1,15 @@
 import Foundation
+import Subprocess
+
+#if canImport(Darwin)
+    import System
+#else
+    import SystemPackage
+#endif
 
 // MARK: - Command Result
 
-public struct CommandResult {
+public struct CommandResult: Sendable {
     public let standardOutput: String
     public let standardError: String
     public let exitCode: Int32
@@ -30,7 +37,7 @@ public struct CommandResult {
 
 // MARK: - Runner Options
 
-public struct RunnerOptions {
+public struct RunnerOptions: Sendable {
     public var environment: [String: String]?
     public var workingDirectory: String?
     public var outputLimit: Int
@@ -47,19 +54,12 @@ public struct RunnerOptions {
         self.outputLimit = outputLimit
         self.logOutput = logOutput
     }
-
-    public init() {
-        self.environment = nil
-        self.workingDirectory = nil
-        self.outputLimit = 1024 * 1024
-        self.logOutput = false
-    }
 }
 
 // MARK: - Legendary Runner
 
-/// Runner for executing Legendary CLI commands synchronously
-public class LegendaryRunner {
+/// Runner for executing Legendary CLI commands asynchronously via Subprocess
+public struct LegendaryRunner: Sendable {
     private let legendaryPath: String
 
     public init(legendaryPath: String) {
@@ -69,14 +69,15 @@ public class LegendaryRunner {
     public init() {
         self.legendaryPath = legendaryBinaryPath()
     }
+
     // MARK: - Public API
 
-    /// Run a Legendary command synchronously and return Result
+    /// Run a Legendary command asynchronously and return a CommandResult
     public func run(
         _ command: LegendaryCommand,
         baseOptions: BaseCommandOptions = BaseCommandOptions(),
         options: RunnerOptions = RunnerOptions()
-    ) throws -> CommandResult {
+    ) async throws -> CommandResult {
         let args = command.toArguments(withBase: baseOptions)
         let fullCommand = ([legendaryPath] + args).joined(separator: " ")
 
@@ -84,103 +85,55 @@ public class LegendaryRunner {
             print("Running: legendary \(args.joined(separator: " "))")
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: legendaryPath)
-        process.arguments = args
-
-        // Set up environment
-        var env = ProcessInfo.processInfo.environment
+        // Build environment: inherit parent env, then layer in any custom vars
+        var env: Subprocess.Environment = .inherit
         if let customEnv = options.environment {
-            for (key, value) in customEnv {
-                env[key] = value
-            }
-        }
-
-        env["LEGENDARY_CONFIG_PATH"] = legendaryConfigPath()
-
-        process.environment = env
-
-        // Set working directory if provided
-        if let workingDir = options.workingDirectory {
-            process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
-        }
-
-        // Set up pipes for stdout and stderr
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
-
-        // Launch the process
-        do {
-            try process.run()
-        }
-        catch {
-            throw LegendaryError.commandFailed(
-                exitCode: -1,
-                stderr: "Failed to launch process: \(error.localizedDescription)"
+            env = env.updating(
+                customEnv.reduce(into: [Subprocess.Environment.Key: String]()) { dict, pair in
+                    dict[Subprocess.Environment.Key(stringLiteral: pair.key)] = pair.value
+                }
             )
         }
+        env = env.updating(["LEGENDARY_CONFIG_PATH": legendaryConfigPath()])
 
-        // Read output (blocking)
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let workingDir = options.workingDirectory.map { FilePath($0) }
 
-        // Wait for process to finish
-        process.waitUntilExit()
+        let result = try await Subprocess.run(
+            .path(FilePath(legendaryPath)),
+            arguments: Subprocess.Arguments(args),
+            environment: env,
+            workingDirectory: workingDir,
+            output: .string(limit: options.outputLimit),
+            error: .string(limit: options.outputLimit)
+        )
 
-        // Convert output to strings with limit
-        var stdoutString = String(data: stdoutData, encoding: .utf8) ?? ""
-        var stderrString = String(data: stderrData, encoding: .utf8) ?? ""
-
-        if options.outputLimit > 0 {
-            if stdoutString.utf8.count > options.outputLimit {
-                let index = stdoutString.utf8.index(
-                    stdoutString.utf8.startIndex,
-                    offsetBy: options.outputLimit
-                )
-                stdoutString = String(stdoutString.utf8[..<index]) ?? ""
-            }
-            if stderrString.utf8.count > options.outputLimit {
-                let index = stderrString.utf8.index(
-                    stderrString.utf8.startIndex,
-                    offsetBy: options.outputLimit
-                )
-                stderrString = String(stderrString.utf8[..<index]) ?? ""
-            }
-        }
+        let stdoutString = result.standardOutput ?? ""
+        let stderrString = result.standardError ?? ""
 
         if options.logOutput {
-            if !stdoutString.isEmpty {
-                print("stdout:", stdoutString)
-            }
-            if !stderrString.isEmpty {
-                print("stderr:", stderrString)
-            }
-            print("Exit code:", process.terminationStatus)
+            if !stdoutString.isEmpty { print("stdout:", stdoutString) }
+            if !stderrString.isEmpty { print("stderr:", stderrString) }
+            print("Exit code:", exitCode(from: result.terminationStatus))
         }
 
         return CommandResult(
             standardOutput: stdoutString,
             standardError: stderrString,
-            exitCode: process.terminationStatus,
+            exitCode: exitCode(from: result.terminationStatus),
             command: fullCommand,
-            processID: process.processIdentifier
+            processID: result.processIdentifier.value
         )
     }
 
-    public func tryRun(
-        _ command: LegendaryCommand,
-        baseOptions: BaseCommandOptions = BaseCommandOptions(),
-        options: RunnerOptions = RunnerOptions()
-    ) -> CommandResult? {
-        return try? run(command, baseOptions: baseOptions, options: options)
-    }
+    // MARK: - Helpers
 
-    public func tryRun(
-        _ command: LegendaryCommand,
-    ) -> CommandResult? {
-        return try? run(command, baseOptions: BaseCommandOptions(), options: RunnerOptions())
+    private func exitCode(from status: TerminationStatus) -> Int32 {
+        switch status {
+        case .exited(let code): return code
+        #if !os(Windows)
+            case .signaled(let code): return code
+        #endif
+        }
     }
 }
 

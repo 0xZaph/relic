@@ -33,6 +33,8 @@ public struct GameInfo {
     public let description: String?
     public let isInstalled: Bool
     public let installPath: String?
+    /// Keys are platform strings e.g. "Windows", "Mac"
+    public let platformVersions: [String: String]
 
     public init(
         appName: String,
@@ -43,7 +45,8 @@ public struct GameInfo {
         artLogo: String? = nil,
         description: String? = nil,
         isInstalled: Bool = false,
-        installPath: String? = nil
+        installPath: String? = nil,
+        platformVersions: [String: String] = [:]
     ) {
         self.appName = appName
         self.title = title
@@ -54,6 +57,39 @@ public struct GameInfo {
         self.description = description
         self.isInstalled = isInstalled
         self.installPath = installPath
+        self.platformVersions = platformVersions
+    }
+}
+
+/// Manifest-derived details fetched on demand (requires an API call).
+public struct GameDetails {
+    public let appName: String
+    public let buildVersion: String
+    public let diskSize: Int64       // bytes, uncompressed install size
+    public let downloadSize: Int64   // bytes, compressed download size
+    public let launchExe: String
+    public let numFiles: Int
+    public let numChunks: Int
+    public let platform: String
+
+    public init(
+        appName: String,
+        buildVersion: String,
+        diskSize: Int64,
+        downloadSize: Int64,
+        launchExe: String,
+        numFiles: Int,
+        numChunks: Int,
+        platform: String
+    ) {
+        self.appName = appName
+        self.buildVersion = buildVersion
+        self.diskSize = diskSize
+        self.downloadSize = downloadSize
+        self.launchExe = launchExe
+        self.numFiles = numFiles
+        self.numChunks = numChunks
+        self.platform = platform
     }
 }
 
@@ -218,7 +254,7 @@ public enum Legendary {
         public let manifestPath: String?
         public let needsVerification: Bool
         public let platform: LegendaryInstallPlatform
-        public let prereqInfo: [Prerequisite]?
+        public let prereqInfo: Prerequisite?
         public let requiresOt: Bool
         public let savePath: String?
         public let title: String

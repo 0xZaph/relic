@@ -3,6 +3,8 @@ build/
 cmake-build-*/
 out/
 Build/
+legendary
+Examples/
 
 # CMake generated files
 CMakeCache.txt
@@ -52,6 +54,7 @@ Sources/App/.qmlls.ini
 .clangd/
 compile_commands.json
 .qmlls.ini
+.kiro/
 
 # JetBrains CLion
 .idea/

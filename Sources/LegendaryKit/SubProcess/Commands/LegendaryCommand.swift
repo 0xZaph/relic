@@ -1,56 +1,36 @@
 // MARK: - Main Command Enum
 
-public enum LegendaryCommand {
+public enum LegendaryCommand: Sendable {
     case auth(AuthCommandOptions)
     case `import`(ImportCommandOptions)
     case list(ListCommandOptions)
+    case info(InfoCommandOptions)
     case none
 
-    /// Convert the command to command-line arguments
-    /// - Parameter baseOptions: Optional base command options that apply to all commands
-    /// - Returns: Array of command-line arguments ready to be passed to legendary
     public func toArguments(withBase baseOptions: BaseCommandOptions = BaseCommandOptions())
         -> [String]
     {
         var args: [String] = []
-
-        // Add base options first
         args += baseOptions.toArguments()
-
-        // Add subcommand-specific arguments
         switch self {
-        case .auth(let options):
-            args += options.toArguments()
-        case .import(let options):
-            args += options.toArguments()
-        case .list(let options):
-            args += options.toArguments()
-        case .none:
-            break
+        case .auth(let options):    args += options.toArguments()
+        case .import(let options):  args += options.toArguments()
+        case .list(let options):    args += options.toArguments()
+        case .info(let options):    args += options.toArguments()
+        case .none:                 break
         }
-
         return args
     }
 
-    /// Convert the command to command-line arguments
-    /// - Returns: Array of command-line arguments ready to be passed to legendary
-    public func toArguments()
-        -> [String]
-    {
+    public func toArguments() -> [String] {
         var args: [String] = []
-
-        // Add subcommand-specific arguments
         switch self {
-        case .auth(let options):
-            args += options.toArguments()
-        case .import(let options):
-            args += options.toArguments()
-        case .list(let options):
-            args += options.toArguments()
-        case .none:
-            break
+        case .auth(let options):    args += options.toArguments()
+        case .import(let options):  args += options.toArguments()
+        case .list(let options):    args += options.toArguments()
+        case .info(let options):    args += options.toArguments()
+        case .none:                 break
         }
-
         return args
     }
 }
@@ -75,7 +55,7 @@ extension LegendaryCommand {
         _ appName: String,
         from installationDirectory: String,
         platform: LegendaryPlatform? = nil,
-        withDlcs: Bool = false
+        withDlcs: Bool = true
     ) -> LegendaryCommand {
         .import(
             ImportCommandOptions(
