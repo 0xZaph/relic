@@ -17,7 +17,7 @@ public struct CommandResult: Sendable {
     public let processID: Int32
 
     public var success: Bool {
-        exitCode == 0
+        exitCode == 0 && !standardError.contains("CRITICAL") && !standardError.contains("ERROR")
     }
 
     public init(
@@ -134,6 +134,136 @@ public struct LegendaryRunner: Sendable {
             case .signaled(let code): return code
         #endif
         }
+    }
+
+    private class StreamState: @unchecked Sendable {
+        var stdoutData = Data()
+        var stderrData = Data()
+        var currentProgress: Double = 0.0
+        var currentETA: String = ""
+        let lock = NSLock()
+    }
+
+    /// Run a Legendary command using Foundation Process to intercept output and report progress
+    public func runWithProgress(
+        _ command: LegendaryCommand,
+        baseOptions: BaseCommandOptions = BaseCommandOptions(),
+        options: RunnerOptions = RunnerOptions(),
+        onProgress: @escaping @Sendable (Double, String) -> Void
+    ) async throws -> CommandResult {
+        let args = command.toArguments(withBase: baseOptions)
+        let fullCommand = ([legendaryPath] + args).joined(separator: " ")
+
+        if options.logOutput {
+            print("Running: legendary \(args.joined(separator: " "))")
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: legendaryPath)
+        process.arguments = args
+
+        var env = ProcessInfo.processInfo.environment
+        if let customEnv = options.environment {
+            for (k, v) in customEnv {
+                env[k] = v
+            }
+        }
+        env["LEGENDARY_CONFIG_PATH"] = legendaryConfigPath()
+        process.environment = env
+
+        if let wd = options.workingDirectory {
+            process.currentDirectoryURL = URL(fileURLWithPath: wd)
+        }
+
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+        // Redirect stdin to /dev/null — legendary must never block waiting for input.
+        // The -y flag handles prompts; if it tries to read stdin anyway it gets EOF.
+        process.standardInput = FileHandle.nullDevice
+
+        let state = StreamState()
+
+        outPipe.fileHandleForReading.readabilityHandler = { fileHandle in
+            let data = fileHandle.availableData
+            if data.isEmpty { return }
+            state.lock.lock()
+            state.stdoutData.append(data)
+            state.lock.unlock()
+        }
+
+        // Match both integer and decimal percentages: "Progress: 45%" or "Progress: 45.23%"
+        let progressRegex = try! NSRegularExpression(pattern: "Progress: (\\d+(?:\\.\\d+)?)%")
+        let etaRegex = try! NSRegularExpression(pattern: "ETA: (\\d{2}:\\d{2}:\\d{2})")
+
+        errPipe.fileHandleForReading.readabilityHandler = { fileHandle in
+            let data = fileHandle.availableData
+            if data.isEmpty { return }
+            state.lock.lock()
+            state.stderrData.append(data)
+            
+
+            if let chunk = String(data: data, encoding: .utf8) {
+                let parts = chunk.split(whereSeparator: { $0 == "\r" || $0 == "\n" })
+                for part in parts {
+                    let line = String(part)
+                    var updated = false
+                    
+                    if let pMatch = progressRegex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) {
+                        if let r = Range(pMatch.range(at: 1), in: line), let val = Double(line[r]) {
+                            state.currentProgress = val / 100.0
+                            updated = true
+                        }
+                    }
+                    if let eMatch = etaRegex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) {
+                        if let r = Range(eMatch.range(at: 1), in: line) {
+                            state.currentETA = String(line[r])
+                            updated = true
+                        }
+                    }
+                    
+                    if updated {
+                        let prog = state.currentProgress
+                        let eta = state.currentETA
+                        state.lock.unlock()
+                        onProgress(prog, eta)
+                        return
+                    }
+                }
+            }
+            state.lock.unlock()
+        }
+
+        // Set terminationHandler BEFORE run() to eliminate the race where the process
+        // exits before the handler is registered (which would hang us forever).
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            process.terminationHandler = { _ in
+                continuation.resume()
+            }
+            do {
+                try process.run()
+            } catch {
+                // If the process couldn't start, resume immediately to avoid a hang.
+                print("[LegendaryRunner] process.run() threw: \(error)")
+                process.terminationHandler = nil
+                continuation.resume()
+            }
+        }
+
+        outPipe.fileHandleForReading.readabilityHandler = nil
+        errPipe.fileHandleForReading.readabilityHandler = nil
+
+        let stdoutString = String(data: state.stdoutData, encoding: .utf8) ?? ""
+        let stderrString = String(data: state.stderrData, encoding: .utf8) ?? ""
+
+        return CommandResult(
+            standardOutput: stdoutString,
+            standardError: stderrString,
+            exitCode: process.terminationStatus,
+            command: fullCommand,
+            processID: process.processIdentifier
+        )
     }
 }
 

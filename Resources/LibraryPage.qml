@@ -223,6 +223,74 @@ Kirigami.Page {
                 spacing: Kirigami.Units.smallSpacing
 
                 Kirigami.Heading {
+                    text: qsTr("Download Game")
+                    level: 4
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Controls.TextField {
+                        id: downloadPathField
+                        placeholderText: qsTr("(Required) Path to download folder…")
+                        Layout.fillWidth: true
+                    }
+
+                    Controls.Button {
+                        text: qsTr("Browse…")
+                        icon.name: "document-open-folder"
+                        onClicked: downloadFolderDialog.open()
+                    }
+                }
+
+                Kirigami.InlineMessage {
+                    Layout.fillWidth: true
+                    visible: lvm.downloadError !== ""
+                    type: Kirigami.MessageType.Error
+                    text: lvm.downloadError
+                }
+
+                Controls.Button {
+                    readonly property bool thisGameDownloading: lvm.downloadingAppName === lvm.selectedAppName
+                    text: thisGameDownloading ? qsTr("Downloading…") : qsTr("Download")
+                    icon.name: "download"
+                    enabled: downloadPathField.text.trim() !== ""
+                    Layout.fillWidth: true
+                    onClicked: lvm.downloadGame(lvm.selectedAppName, downloadPathField.text.trim())
+                }
+
+                ColumnLayout {
+                    visible: lvm.downloadingAppName === lvm.selectedAppName
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.smallSpacing
+
+                    Controls.ProgressBar {
+                        Layout.fillWidth: true
+                        value: lvm.downloadProgress
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Controls.Label {
+                            text: Math.round(lvm.downloadProgress * 100) + "%"
+                            Layout.alignment: Qt.AlignLeft
+                        }
+                        Item { Layout.fillWidth: true }
+                        Controls.Label {
+                            text: lvm.downloadETA !== "" ? qsTr("ETA: ") + lvm.downloadETA : ""
+                            Layout.alignment: Qt.AlignRight
+                            color: Kirigami.Theme.disabledTextColor
+                        }
+                    }
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    height: Kirigami.Units.largeSpacing
+                }
+
+                Kirigami.Heading {
                     text: qsTr("Import Existing Installation")
                     level: 4
                 }
@@ -302,6 +370,12 @@ Kirigami.Page {
     FolderDialog {
         id: folderDialog
         onAccepted: importPathField.text = selectedFolder.toString().replace("file://", "")
+    }
+
+    // Folder picker for download base path
+    FolderDialog {
+        id: downloadFolderDialog
+        onAccepted: downloadPathField.text = selectedFolder.toString().replace("file://", "")
     }
 
     // Busy indicator in the page header area while refreshing
